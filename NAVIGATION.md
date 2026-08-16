@@ -86,9 +86,13 @@ All 56 tests pass. Verified end to end: upload → analyse → tracks → audio 
 
 | Method | Command |
 |---|---|
-| Double-click | `FourierPartial.app` in Finder |
+| Double-click | `FourierPartial.app` in Finder — click again any time to reopen the window; Quit stops the server |
 | Terminal | `./run.sh` (add `--no-open` to skip the browser) |
+| Stop a stray server | `./stop.sh` (only needed after a Force Quit) |
+| First run / new machine | `./setup.sh` |
 | Dev, auto-reload | `.venv/bin/uvicorn backend.main:app --reload --port 8420` |
+
+**`FourierPartial.app` is an AppleScript applet, deliberately.** macOS will not run a bundle's executable again while that bundle is already running — it sends the running instance a *reopen* event instead. A shell script cannot receive that event, so with the old shell-script bundle the second click did nothing at all: no window, no error, no clue. An applet receives it, so clicking the icon always ends with a browser window on a working app. The real logic lives in `scripts/fp_launch.sh` (`ensure` is idempotent); the applet is only event plumbing.
 
 The server picks a free port if 8420 is taken and prints `FOURIER_PARTIAL_URL=...`; the launchers parse that line rather than assuming a port. Logs go to `logs/`, deliberately **outside** `sessions/` — the server clears `sessions/` on shutdown, which would otherwise delete the log at exactly the moment it became useful.
 
