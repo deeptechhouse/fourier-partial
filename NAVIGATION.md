@@ -92,6 +92,27 @@ All 56 tests pass. Verified end to end: upload → analyse → tracks → audio 
 
 The server picks a free port if 8420 is taken and prints `FOURIER_PARTIAL_URL=...`; the launchers parse that line rather than assuming a port. Logs go to `logs/`, deliberately **outside** `sessions/` — the server clears `sessions/` on shutdown, which would otherwise delete the log at exactly the moment it became useful.
 
+## Long Audio (up to 10 minutes)
+
+Measured on an Intel Mac, macOS 12, with synthetic music (notes that decay and stop):
+
+| Duration | Settings | Time | Peak RSS | Tracks |
+|---|---|---|---|---|
+| 60 s | hop 1024, zp 2 | 8.9 s | 260 MB | 6 |
+| 5 min | hop 2048, zp 1 | 23 s | 827 MB | ~30 |
+| 10 min | hop 2048, zp 1 | 51 s | 1.6 GB | 41 |
+
+Cost is roughly linear in duration and **strongly dependent on material**: notes that stop are cheap, dense sustained textures are much more expensive because every partial then spans the whole file.
+
+Four things make it work — remove any one and 10 minutes stops being feasible:
+
+1. `iter_stft_blocks` streams the spectrogram (the full arrays cost ~11 MB per second of audio; 10 min would be ~6.8 GB).
+2. `AnalysisParams.for_duration` spends less per frame on long input.
+3. Grouping requires **temporal overlap**, not just a harmonic relationship.
+4. The quiet-track energy floor is measured against the **loudest track**, not the total, so it means the same thing at any length.
+
+**Known limitation:** the browser fetches every track's audio before first play, and a track is ~106 MB decoded at 10 minutes. Forty tracks is several GB — fine for short phrases, heavy for long ones. The mitigations (fetch-on-demand, and serving the original for "play all", which is valid because the tracks sum to it exactly) are designed in TDD §9 but not yet built.
+
 ## Two Bugs Worth Knowing About
 
 Both shipped in the first implementation, both produced *plausible* output rather than a crash, and both are now pinned by `tests/test_windowing.py`:
