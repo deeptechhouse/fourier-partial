@@ -223,11 +223,12 @@ def test_midi_note_off_precedes_a_note_on_sharing_its_tick(tmp_path):
     path = MidiExporter().export_bundle([track], tmp_path / "abut.mid", SR)
 
     stream = _note_stream(path)
-    for first, second in zip(stream, stream[1:]):
-        if first[0] == second[0] and first[2] == second[2]:
-            assert not (first[1] == "note_on" and second[1] == "note_off"), (
-                f"note {first[2]} is started and stopped on tick {first[0]}"
-            )
+    for index in range(len(stream) - 1):
+        first, second = stream[index], stream[index + 1]
+        if first[0] != second[0] or first[2] != second[2]:
+            continue
+        killed = first[1] == "note_on" and second[1] == "note_off"
+        assert not killed, f"note {first[2]} is started and stopped on tick {first[0]}"
     assert len([s for s in stream if s[1] == "note_on"]) == 2, "both notes must survive"
 
 

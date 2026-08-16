@@ -140,6 +140,37 @@ def render_partial(
     # a numpy error, which keeps callers from having to special-case it.
     length = max(int(num_samples), 0)
     output = np.zeros(length, dtype=np.float64)
+    render_partial_into(output, partial, params)
+    return output.astype(np.float32)
+
+
+def render_partial_into(
+    destination: NDArray[np.float64], partial: Partial, params: AnalysisParams
+) -> None:
+    """Add one partial's audio into `destination`, in place.
+
+    This is where the rendering actually happens; `render_partial` is a thin
+    wrapper that allocates a buffer and calls this.
+
+    WHY IT WORKS ON A SLICE
+    -----------------------
+    A partial occupies the stretch of time between its first and last frame and
+    is silent everywhere else. Rendering it into a whole-file buffer therefore
+    spends almost all of its effort writing zeros over zeros. For a plucked
+    note in a ten-minute recording that is twenty thousand useful samples out
+    of twenty-six million.
+
+    So we size a scratch buffer to the partial's own lifetime, render into
+    that, fade its edges, and add it into `destination` at the right offset.
+    Everything about the maths below is unchanged -- only the extent is.
+
+    Args:
+        destination: Float64 accumulator, modified in place. Must be at least
+            as long as the audio being reconstructed.
+        partial: The trajectory to synthesise.
+        params: Sample rate.
+    """
+    length = destination.shape[0]
 
     # `partial.frames` hands back a defensive tuple copy; grab it ONCE. Calling
     # the property inside the loop would rebuild that tuple on every iteration.
@@ -147,7 +178,19 @@ def render_partial(
     if length == 0 or len(frames) < 2:
         # No buffer to write into, or no segment to render (a single frame is
         # an instant with no duration). Silence is the right answer.
-        return output.astype(np.float32)
+        return
+
+    sample_rate_for_span = float(params.sample_rate)
+    # The partial's whole extent. Frames are strictly time-ordered (enforced by
+    # Partial.append_frame), so the first and last frames bound every segment.
+    span_start = min(max(int(round(frames[0].time_s * sample_rate_for_span)), 0), length)
+    span_stop = min(max(int(round(frames[-1].time_s * sample_rate_for_span)), 0), length)
+    if span_stop <= span_start:
+        return
+
+    # The scratch buffer, sized to the partial rather than to the file.
+    output = np.zeros(span_stop - span_start, dtype=np.float64)
+    base = span_start
 
     sample_rate = float(params.sample_rate)
 
@@ -159,7 +202,7 @@ def render_partial(
     # Half-open bounds [active_start, active_stop) of everything we actually
     # wrote, so the fades below know where the partial is audible. Initialised
     # inverted so the first written segment overwrites both.
-    active_start = length
+    active_start = span_stop
     active_stop = 0
 
     for start_frame, end_frame in zip(frames[:-1], frames[1:], strict=True):
@@ -242,7 +285,10 @@ def render_partial(
             # Segments are contiguous and disjoint by construction (this
             # segment's i1 is the next segment's i0), so a plain assignment is
             # correct and avoids accumulating into stale values.
-            output[i0:i1] = amplitude * np.sin(phase)
+            # `- base` converts the absolute sample index into an index in the
+            # scratch buffer, which starts at the partial's first frame rather
+            # than at the start of the file.
+            output[i0 - base : i1 - base] = amplitude * np.sin(phase)
 
             active_start = min(active_start, i0)
             active_stop = max(active_stop, i1)
@@ -259,14 +305,19 @@ def render_partial(
         )
 
     if active_stop <= active_start:
-        # Every segment was clipped away; the buffer is still all zeros.
-        return output.astype(np.float32)
+        # Every segment was clipped away; the scratch buffer is still all
+        # zeros, so there is nothing to add.
+        return
 
-    # Soften the two hard edges where the partial switches on and off.
-    _apply_edge_fades(output, active_start, active_stop, params.sample_rate)
+    # Soften the two hard edges where the partial switches on and off. The
+    # fades belong to THIS partial, which is why they are applied to the
+    # scratch buffer before it is mixed in -- fading the shared accumulator
+    # would attenuate every partial that happens to overlap this one's edges.
+    _apply_edge_fades(output, active_start - base, active_stop - base, params.sample_rate)
 
-    # One single cast, at the very end. See the module docstring.
-    return output.astype(np.float32)
+    # Mix in. `+=` rather than assignment: several partials of the same track
+    # routinely overlap in time, and each must add to the others.
+    destination[span_start:span_stop] += output
 
 
 def render_track(track: Track, params: AnalysisParams, num_samples: int) -> NDArray[np.float32]:
@@ -294,9 +345,17 @@ def render_track(track: Track, params: AnalysisParams, num_samples: int) -> NDAr
 
     # `track.partials` is already an immutable tuple, so iterating it cannot be
     # disturbed by anything else holding a reference to the track.
+    #
+    # Accumulate in place rather than `mixed += render_partial(...)`. That
+    # version allocated and zeroed a WHOLE-FILE buffer for every partial, no
+    # matter how briefly the partial actually sounded. On a phrase it is merely
+    # wasteful; on a ten-minute file it is fatal -- 26.5 million samples
+    # allocated per partial, of which a plucked note might occupy twenty
+    # thousand. `render_partial_into` allocates the partial's lifetime instead,
+    # which for typical material is a reduction of two to three orders of
+    # magnitude in both allocation and arithmetic.
     for partial in track.partials:
-        # `+=` on a float64 array upcasts the float32 operand automatically.
-        mixed += render_partial(partial, params, length)
+        render_partial_into(mixed, partial, params)
 
     return mixed.astype(np.float32)
 
