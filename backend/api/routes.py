@@ -567,7 +567,23 @@ async def mixdown(
         # merely achieving it.
         mixed = np.asarray(result.original)
     else:
-        mixed = np.zeros(int(result.duration_s * result.sample_rate), dtype=np.float64)
+        # Size the accumulator from the ACTUAL array, never by recomputing the
+        # sample count from the duration.
+        #
+        # `int(duration_s * sample_rate)` looks equivalent and is not. duration_s
+        # is itself `len(original) / sample_rate`, and that round trip does not
+        # always survive float64: 941056 / 44100 = 21.339138321995465, and
+        # 21.339138321995465 * 44100 = 941055.9999999999, which int() truncates
+        # to 941055. One sample short, and `mixed += audio` then raises
+        # ValueError: operands could not be broadcast together.
+        #
+        # This shipped, and every mute and solo on a real recording returned
+        # HTTP 500. The client dutifully reverted the intent it could not have
+        # honoured, so the visible symptom was buttons unselecting themselves.
+        # The 1-second test fixture never caught it because 44100 / 44100 is
+        # exactly 1.0 -- see tests/test_mixdown.py, which now uses a length that
+        # deliberately does not divide evenly.
+        mixed = np.zeros(result.original.shape[0], dtype=np.float64)
         for track in result.tracks:
             if track.track_id in excluded:
                 continue

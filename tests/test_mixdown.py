@@ -30,10 +30,30 @@ def client():
         yield test_client
 
 
+# A length that deliberately does NOT divide evenly into whole seconds.
+#
+# The first version of these tests used exactly 1.0 s — 44100 samples — and
+# passed while the endpoint was broken for every real recording. The accumulator
+# was sized as `int(duration_s * sample_rate)`, and at exactly 1.0 s that round
+# trip is exact, so the off-by-one never appeared. On a real file it did:
+# 941056 / 44100 * 44100 == 941055.9999999999, which truncates one sample short
+# and makes the whole request raise. Every mute and solo returned HTTP 500.
+#
+# 0.483 s is 21300.3 samples — an awkward number on purpose. Fixtures that
+# divide evenly are exactly the ones that hide arithmetic like this.
+AWKWARD_DURATION_S = 0.483
+
+# Sample counts for which `n / 44100 * 44100` does NOT come back as n in
+# float64. These are not arbitrary awkward numbers — they are specifically the
+# ones that break the arithmetic this endpoint used to do. Verified by
+# test_the_float_round_trip_this_guards_really_does_lose_a_sample below.
+FLOAT_HOSTILE_LENGTHS = (44_109, 44_127, 44_145, 88_218)
+
+
 @pytest.fixture(scope="module")
 def analysed(client):
     """One analysis of a known signal, reused by the tests below."""
-    original = make_harmonic_tone(220.0, 6, duration_s=1.0)
+    original = make_harmonic_tone(220.0, 6, duration_s=AWKWARD_DURATION_S)
     buffer = io.BytesIO()
     # FLOAT so the decoded upload is bit-identical to what we generated, which
     # is what lets the byte-identity assertion below be exact rather than close.
@@ -147,6 +167,77 @@ def test_non_numeric_exclude_is_rejected(client, analysed):
 
 def test_mixdown_of_unknown_job_is_404(client):
     assert client.get("/api/jobs/nope/mixdown").status_code == 404
+
+
+def test_the_float_round_trip_this_guards_really_does_lose_a_sample():
+    """Establish the hazard exists before testing that we survive it.
+
+    `len(audio) / sample_rate * sample_rate` is not always `len(audio)` in
+    float64. It fails for about 8% of lengths — 163,655 of the first two
+    million — so roughly one real recording in twelve. The file that exposed
+    this in production was 941,056 samples, and it is in that set.
+
+    Without this test the sweep below could quietly stop reproducing anything
+    (say, if someone "tidied" the lengths into round numbers) and keep passing.
+    """
+    sample_rate = 44_100
+    for n in FLOAT_HOSTILE_LENGTHS:
+        assert int((n / sample_rate) * sample_rate) != n, f"{n} no longer round-trips wrong"
+    assert int((941_056 / sample_rate) * sample_rate) == 941_055
+
+
+@pytest.mark.parametrize("n_samples", FLOAT_HOSTILE_LENGTHS)
+def test_exclude_works_at_lengths_that_break_the_float_round_trip(client, n_samples):
+    """The regression that shipped: exclude 500'd on ~1 file in 12.
+
+    Sizing the accumulator by recomputing samples from a float duration loses a
+    sample whenever the round trip does not land exactly, and `mixed += audio`
+    then raises ValueError. Every mute and solo on such a file returned HTTP
+    500, and the client reverted the intent it could not honour — so the user
+    saw their buttons unselecting themselves.
+
+    These lengths are chosen precisely because they FAIL that round trip. Note
+    the array is built to an exact sample count rather than from a duration:
+    going through `duration_s` would re-introduce the very rounding under test.
+    """
+    t = np.arange(n_samples) / 44_100
+    original = np.zeros(n_samples, dtype=np.float64)
+    for harmonic in range(1, 5):
+        original += np.sin(2 * np.pi * 220.0 * harmonic * t) / harmonic
+    original = (0.6 * original / np.max(np.abs(original))).astype(np.float32)
+    assert len(original) == n_samples
+
+    buffer = io.BytesIO()
+    sf.write(buffer, original, 44_100, format="WAV", subtype="FLOAT")
+
+    response = client.post(
+        "/api/analyze", files={"file": ("t.wav", buffer.getvalue(), "audio/wav")}
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+    for _ in range(600):
+        status = client.get(f"/api/jobs/{job_id}").json()
+        if status["state"] in ("complete", "failed"):
+            break
+        time.sleep(0.05)
+    assert status["state"] == "complete", status
+
+    summary = client.get(f"/api/jobs/{job_id}/tracks").json()
+    ids = [t["track_id"] for t in summary["tracks"]]
+
+    # Excluding one track must succeed, and must still add back up.
+    single = client.get(f"/api/jobs/{job_id}/mixdown?exclude={ids[0]}")
+    assert single.status_code == 200, f"{duration_s}s: {single.status_code} {single.text[:200]}"
+
+    rest = _wav(single)
+    first = _wav(client.get(f"/api/jobs/{job_id}/tracks/{ids[0]}/audio"))
+    assert len(rest) == len(original), f"{duration_s}s: length changed"
+    assert np.max(np.abs((rest + first) - original.astype(np.float64))) < 1e-6
+
+    # And excluding everything must be silence, not a crash.
+    everything = client.get(f"/api/jobs/{job_id}/mixdown?exclude={','.join(map(str, ids))}")
+    assert everything.status_code == 200
+    assert np.max(np.abs(_wav(everything))) < 1e-6
 
 
 # =============================================================================

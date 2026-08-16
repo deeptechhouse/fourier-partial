@@ -284,6 +284,23 @@ button[aria-pressed="true"] {
   background: var(--surface-error);
   border-left-color: var(--danger);
   color: var(--paper);
+
+  /* Sticky, because an error that scrolls off screen is an error nobody sees.
+   *
+   * This is not hypothetical. A mixdown bug made every mute and solo return
+   * HTTP 500, and the app did exactly what it should: it reverted the intent it
+   * could not honour and put the reason in this banner. But the banner is at
+   * the top of the page and the track the user was clicking was forty rows
+   * down, so the message appeared somewhere they were not looking. What they
+   * experienced was "the buttons unselect themselves" — a mysterious UI fault
+   * rather than a reported server failure, which is a much harder thing to
+   * describe and a much harder thing to diagnose.
+   *
+   * z-index keeps it above the sticky column headings it will overlap. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 35%);
 }
 
 /* --- Dropzone ------------------------------------------------------------- */
