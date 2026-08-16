@@ -53,6 +53,15 @@
       <span id="playhead" class="playhead-time">0.00 s / 0.00 s</span>
     </div>
 
+    <!-- How playback is being fed. Empty and hidden for short files, where
+         every track is simply loaded; filled in for long ones, where tracks are
+         fetched on demand and solo therefore takes a moment. A user who notices
+         the delay should find the reason on the page, not have to guess it, so
+         this is never folded away. Announced through #announcer rather than
+         given a live role of its own, because a region that is hidden until it
+         matters is not reliably announced when it appears. -->
+    <p id="playback-mode" class="playback-mode" hidden></p>
+
     <!-- Column headings. aria-hidden because every control below already
          carries a full accessible name; announcing these too would double up. -->
     <div class="tracks-head" aria-hidden="true">

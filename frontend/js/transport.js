@@ -31,8 +31,50 @@
  * gain, "play everything" reproduces the original exactly. The promise is
  * kept by arithmetic rather than by careful mixing.
  *
- * STATUS: implemented (Phase 5). The contract is unchanged from the scaffold.
+ * TWO KINDS OF SOURCE, SO LONG FILES FIT IN A TAB
+ * -----------------------------------------------
+ * At ten minutes one track is ~106 MB decoded and a long file can yield forty
+ * of them, so holding every track is several gigabytes and the tab dies. The
+ * server's /mixdown endpoint answers the sum of all tracks (optionally minus a
+ * few) as ONE buffer, which is the same audio by the same arithmetic above.
+ *
+ * This module therefore understands two roles, and they are deliberately the
+ * *only* two:
+ *
+ *   THE MIX      One reserved track under `MIX_TRACK_ID`, holding a server-side
+ *                sum. Ordinary in every other way: it has a GainNode, it obeys
+ *                mute, and dispose() releases it like any other.
+ *
+ *   SOLO-ONLY    A track registered with `{ soloOnly: true }` is silent unless
+ *                it is soloed. That is what stops an individually-fetched track
+ *                from being *added on top of* a mix that already contains it —
+ *                which would double that track in the output and quietly break
+ *                the one claim this product makes.
+ *
+ * The caller decides which arrangement is in force; this module only makes both
+ * expressible without a second gain path. Nothing about the scheduling changes:
+ * the mix is scheduled at the same shared timestamp as everything else.
+ *
+ * A NOTE ON JOINING LATE
+ * ----------------------
+ * A buffer registered while the transport is running has no source, so it stays
+ * silent until the next play(). Callers that fetch audio on demand should call
+ * `seek(transport.currentTime)` once the new buffer is registered: that restarts
+ * every source together, at one freshly-derived shared timestamp, which is the
+ * only way to add a voice mid-piece without inventing a second anchor.
+ *
+ * STATUS: implemented (Phase 5; extended in Phase 6 for bounded playback).
  */
+
+/**
+ * The reserved id for the single "everything" buffer.
+ *
+ * Negative on purpose: the server numbers tracks from zero, so no real track
+ * can ever collide with it. Being a track id rather than a special case means
+ * the mix gets the existing gain, dispose, duration and end-watching machinery
+ * for free instead of a parallel copy of each.
+ */
+export const MIX_TRACK_ID = -1;
 
 /**
  * Seconds of scheduling lookahead. Enough to absorb main-thread hiccups.
@@ -73,10 +115,16 @@ export class Transport {
 
   /**
    * Register a track's decoded audio.
+   *
    * @param {number} trackId
    * @param {AudioBuffer} buffer
+   * @param {{soloOnly?: boolean}} [options] `soloOnly` marks a track that is
+   *   silent unless it is soloed. Used by the bounded-memory path, where the
+   *   mix already contains this track's audio and playing both would double it.
+   *   Omitted means a normal track, so every existing call site is unchanged.
    */
-  addTrack(trackId, buffer) {
+  addTrack(trackId, buffer, options = {}) {
+    const soloOnly = Boolean(options.soloOnly);
     const existing = this._tracks.get(trackId);
 
     if (existing) {
@@ -94,7 +142,14 @@ export class Transport {
       const wasEndWatcher = existing.source !== null && existing.source.onended !== null;
       this._releaseSource(existing);
       existing.buffer = buffer;
-      if (this._playing && wasEndWatcher) this._armEndWatcher();
+      // The role is re-stated on every registration rather than remembered,
+      // so a caller reading this line knows exactly what it is asking for.
+      existing.soloOnly = soloOnly;
+      // `false`: a replaced buffer is not the piece finishing. If this was the
+      // only sounding source — which is the normal case in bounded mode, where
+      // the mix is often the only registered track — rewinding to zero here
+      // would turn "mute one track" into "jump back to the start".
+      if (this._playing && wasEndWatcher) this._armEndWatcher(false);
     } else {
       // One GainNode per track, created once and kept for the track's whole
       // life. This is the node mute and solo write to; sources come and go
@@ -110,7 +165,7 @@ export class Transport {
       // into one "is this audible" boolean is what makes solo/mute interaction
       // go wrong, because you can no longer answer "what should this track do
       // when the last solo is cleared?"
-      this._tracks.set(trackId, { buffer, gain, source: null, muted: false });
+      this._tracks.set(trackId, { buffer, gain, source: null, muted: false, soloOnly });
     }
 
     // A brand-new track must obey a solo that is already active, otherwise
@@ -123,6 +178,117 @@ export class Transport {
     // and every timestamp that is not the shared one is a chance to be a
     // sample out. Callers that want it audible now should call
     // `seek(transport.currentTime)`, which restarts every track together.
+  }
+
+  /**
+   * Register or replace the single "everything" buffer.
+   *
+   * Thin on purpose: the mix is a track like any other, it just has a reserved
+   * id. Replacing it (the user muted something, so the server sent a different
+   * sum) goes through addTrack's re-registration path, which keeps the mix's
+   * GainNode and therefore its mute position.
+   *
+   * SWAPPING WHILE PLAYING IS SEAMLESS FROM THE CALLER'S SIDE, and this method
+   * exists mostly to make that true. A replaced buffer's source has to be
+   * released, and a released source cannot be restarted — so on its own the
+   * swap would leave the new mix silent, and if the mix were the only sounding
+   * source (which in bounded mode it usually is) it would also settle the whole
+   * transport into a stopped state. Muting a track nine minutes into a piece
+   * would then just... stop the music, with nothing on screen to explain it.
+   *
+   * So the playing state is captured and restored here, where the fact is
+   * known, rather than left as a rule every caller has to remember. The restart
+   * is a real restart — play() re-derives ONE shared timestamp for every source
+   * — which is the module's only sanctioned way to bring a new buffer in
+   * mid-piece. The user hears the scheduling lookahead as a brief gap at the
+   * same position, not a jump.
+   *
+   * @param {AudioBuffer} buffer
+   */
+  setMix(buffer) {
+    // Read both BEFORE addTrack: it is the call that may clear `_playing`.
+    const wasPlaying = this._playing;
+    const position = this.currentTime;
+
+    this.addTrack(MIX_TRACK_ID, buffer);
+
+    // `wasPlaying` is read synchronously right above, so there is no window in
+    // which playback could have ended naturally between the question and the
+    // answer — which is exactly why the capture lives here and not in a caller
+    // that would have to hold the flag across an await.
+    if (wasPlaying) this.play(position);
+  }
+
+  /**
+   * Forget a track entirely: stop it, unwire it, and drop its buffer.
+   *
+   * WHY THIS EXISTS. The bounded-memory path caches a few decoded tracks and
+   * evicts the least recently used one. Evicting it from that cache achieves
+   * nothing while the Transport still holds the same AudioBuffer — the buffer
+   * is the megabytes — so eviction has to reach in here too.
+   *
+   * @param {number} trackId
+   * @returns {boolean} whether a track was actually removed
+   */
+  removeTrack(trackId) {
+    const track = this._tracks.get(trackId);
+    if (!track) return false;
+
+    // Same ordering care as addTrack: ask whether this source is the one
+    // watching for the end of playback BEFORE releasing it, because releasing
+    // clears the handler. Losing the watcher without re-arming would leave the
+    // transport believing it was playing forever.
+    const wasEndWatcher = track.source !== null && track.source.onended !== null;
+    this._releaseSource(track);
+
+    // Disconnect the gain as well as dropping the map entry. A GainNode that is
+    // merely unreferenced but still wired to the master bus is not collectable,
+    // which is the leak dispose() exists to prevent — one per eviction here.
+    track.gain.disconnect();
+    this._tracks.delete(trackId);
+    this._soloed.delete(trackId);
+
+    if (this._playing && wasEndWatcher) this._armEndWatcher(false);
+    // Removing a soloed track changes what every other track sounds like.
+    this._updateGains();
+    return true;
+  }
+
+  /** Whether a track id currently has audio registered. @param {number} trackId */
+  hasTrack(trackId) {
+    return this._tracks.has(trackId);
+  }
+
+  /**
+   * Set the entire mute/solo picture in one pass.
+   *
+   * WHY A BATCH SETTER. setMuted and setSoloed each recompute every gain, so
+   * applying a whole picture one call at a time is quadratic: two hundred
+   * tracks would mean forty thousand gain writes for a single click. It also
+   * lets the caller keep the user's intent in one place and hand the transport
+   * a complete answer, rather than replaying a sequence of deltas and hoping
+   * the two representations stayed in step.
+   *
+   * Ids that are not registered are ignored, exactly as setSoloed ignores them:
+   * a click that raced a still-loading track must not silence the real ones.
+   *
+   * @param {Iterable<number>} mutedIds
+   * @param {Iterable<number>} soloedIds
+   */
+  setMixState(mutedIds, soloedIds) {
+    const muted = new Set(mutedIds || []);
+    const soloed = new Set(soloedIds || []);
+
+    this._soloed.clear();
+    for (const [id, track] of this._tracks) {
+      track.muted = muted.has(id);
+      if (soloed.has(id)) this._soloed.add(id);
+    }
+
+    // Still just gain. No source is stopped, started or re-timed here, so the
+    // whole picture can change mid-playback without costing a single sample of
+    // synchronisation.
+    this._updateGains();
   }
 
   /**
@@ -379,7 +545,7 @@ export class Transport {
    * stored as plain facts and this function is the only thing that turns them
    * into sound. Every mutation ends with a call to it.
    *
-   * The truth table, with `anySolo = soloed.size > 0`:
+   * The truth table for a normal track, with `anySolo = soloed.size > 0`:
    *
    *   anySolo  isSoloed  muted   gain   why
    *   -------  --------  -----   ----   ----------------------------------
@@ -389,6 +555,22 @@ export class Transport {
    *   true     true      true    0.0    mute wins (see below)
    *   true     false     false   0.0    silenced by someone else's solo
    *   true     false     true    0.0    silenced twice over
+   *
+   * A `soloOnly` track has one extra rule, and it is a subtraction rather than
+   * an addition: it is silent unless it is soloed, whatever anySolo says.
+   *
+   *   isSoloed  muted   gain   why
+   *   --------  -----   ----   -------------------------------------------
+   *   false     -       0.0    the mix already contains this track's audio
+   *   true      false   1.0    now it is the thing being listened to
+   *   true      true    0.0    mute still wins
+   *
+   * That first row is the whole point. In bounded mode the mix buffer is the
+   * sum of every track, so a separately-fetched copy of one of them must not
+   * also be audible — it would appear twice in the output at double amplitude,
+   * and "unmute everything reproduces the original" would silently stop being
+   * true. Expressing it as a gain rule rather than as caller discipline means
+   * there is one place to get it right instead of one per call site.
    *
    * Mute wins over solo because it keeps each control's meaning single: mute
    * means "never make sound", solo means "of the unmuted tracks, only these".
@@ -403,8 +585,10 @@ export class Transport {
     const now = this._ctx.currentTime;
 
     for (const [id, track] of this._tracks) {
-      // Derived from both facts, never from a cached "audible" flag.
-      const audible = !track.muted && (!anySolo || this._soloed.has(id));
+      // Derived from the stored facts, never from a cached "audible" flag.
+      const isSoloed = this._soloed.has(id);
+      const heardWhenUnsoloed = track.soloOnly ? false : !anySolo;
+      const audible = !track.muted && (isSoloed || heardWhenUnsoloed);
       const target = audible ? 1 : 0;
 
       const param = track.gain.gain;
@@ -437,8 +621,15 @@ export class Transport {
    *
    * Kept as its own function because the watcher has to be re-armed if the
    * source carrying it is ever released early (see addTrack).
+   *
+   * @param {boolean} [rewindWhenSilent=true] What "no source is sounding" means
+   *   at this call site. After play() it means the piece is over, so the
+   *   playhead returns to the top. After a buffer swap or an eviction it means
+   *   the caller took the audio away and is about to put some back, so the
+   *   playhead must stay where it is — otherwise muting a track nine minutes
+   *   into a ten-minute file would jump back to the beginning.
    */
-  _armEndWatcher() {
+  _armEndWatcher(rewindWhenSilent = true) {
     let watched = null;
     let longestSoFar = -1;
 
@@ -453,9 +644,18 @@ export class Transport {
     }
 
     if (watched === null) {
-      // Nothing is sounding, so playback has in effect already ended. Say so
-      // now rather than waiting for a callback that can never arrive.
-      this._handlePlaybackEnd();
+      // Nothing is sounding, and no callback can ever arrive to say so — the
+      // only thing that would have reported the end has just been released. So
+      // settle into a stopped state here rather than leaving `_playing` true
+      // with a playhead that advances over silence.
+      if (rewindWhenSilent) {
+        this._handlePlaybackEnd();
+      } else {
+        // stop(), not _handlePlaybackEnd(): stop() saves the position, which is
+        // exactly what a caller that is mid-swap needs so its play(position)
+        // resumes instead of restarting.
+        this.stop();
+      }
       return;
     }
 

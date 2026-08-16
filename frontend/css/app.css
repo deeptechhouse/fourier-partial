@@ -391,6 +391,24 @@ button[aria-pressed="true"] { font-weight: 600; }
   50%      { opacity: 1; }
 }
 
+/* --- Playback mode note --------------------------------------------------- */
+
+/* The line that admits a long file is being played from a single combined
+ * stream. Not a warning — nothing is wrong — so it takes the cyan accent rather
+ * than the amber one, and sits quietly above the list instead of shouting from
+ * a banner. It is still always visible when it applies. */
+.playback-mode {
+  margin: 0 0 var(--s4);
+  padding: var(--s2) var(--s3);
+  background: var(--ink-800);
+  border-left: 3px solid var(--spec-2);
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--paper-dim);
+  max-width: 78ch;
+}
+
 /* --- Track list ----------------------------------------------------------- */
 
 .tracks-head {
@@ -495,6 +513,76 @@ button[aria-pressed="true"] { font-weight: 600; }
   font-family: var(--font-mono);
   font-size: 11px;
   padding: var(--s1) var(--s2);
+}
+
+/* --- Pitch groups --------------------------------------------------------- */
+
+/* A group is one list item containing a head row and a nested list. The head
+ * row is an ordinary .track-row, so the columns line up with every ungrouped
+ * row above and below it — which is the point: a group must read as part of the
+ * same list, not as a different kind of object. */
+.track-group-head .track-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* The disclosure control, sharing the id cell with the label. */
+.track-id-cell.is-group {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.track-id-cell.is-group .track-id-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.track-disclosure {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--paper-dim);
+}
+
+.track-disclosure:hover { color: var(--paper); }
+
+/* The occurrences. A left rule ties them to the head row they opened from —
+ * cheaper to scan than indentation alone, and it survives the narrow layout
+ * below where the columns are rearranged. */
+.track-group-children {
+  margin-left: var(--s5);
+  border-left: 2px solid var(--ink-600);
+}
+
+.track-row.is-child {
+  padding-left: var(--s3);
+  border-bottom-color: var(--ink-800);
+}
+
+/* Occurrence rows are subordinate to their parent, and the type says so before
+ * the indentation does. */
+.track-row.is-child .track-label {
+  font-size: 12px;
+  color: var(--paper-dim);
+}
+
+/* A group toggle can be partly on — some of its occurrences muted, not all.
+ * aria-pressed="mixed" is the ARIA value for exactly that; the dashed border is
+ * the second, non-colour cue carrying the same fact (WCAG 1.4.1), because the
+ * fill alone would read as an in-between shade rather than a third state. */
+.track-toggle[aria-pressed="mixed"] {
+  background: var(--ink-600);
+  border-color: var(--paper-dim);
+  border-style: dashed;
+  color: var(--paper);
+  font-weight: 600;
 }
 
 .tracks-legend {
@@ -649,6 +737,11 @@ button[aria-pressed="true"] { font-weight: 600; }
   .track-canvas    { grid-area: canvas; }
 
   .track-row:hover { background: none; }
+
+  /* The group's left rule still reads at this width, but its indent no longer
+   * can: the canvas is full-bleed here and every pixel of it is signal. */
+  .track-group-children { margin-left: var(--s2); }
+  .track-row.is-child { padding-left: var(--s2); }
 }
 
 /* At 200% zoom on a laptop the viewport is ~640 CSS px wide. The transport

@@ -13,22 +13,48 @@
  *   3. WS  /api/jobs/{id}/events        -> progress frames until terminal
  *      (falls back to polling GET /api/jobs/{id} if the socket never opens)
  *   4. GET /api/jobs/{id}/tracks        -> the whole workbench payload
- *   5. GET .../tracks/{tid}/audio (xN)  -> decode, register with the Transport
+ *   5. audio, by one of two strategies (below) -> register with the Transport
  *   6. Play.
  *
- * WHY STEP 5 FETCHES EVERYTHING BEFORE THE FIRST PLAY
- * ---------------------------------------------------
+ * STEP 5 HAS TWO STRATEGIES, AND A MEMORY ESTIMATE PICKS ONE
+ * ----------------------------------------------------------
  * transport.js schedules every source at one shared AudioContext timestamp, and
  * a track registered *after* play() has begun has no source and stays silent
  * until the next play(). So "press Play and hear the whole mix" requires every
- * buffer to be present first. We therefore render the workbench immediately
- * (the trajectories need no audio) and load the PCM in the background, with
- * Play disabled and an honest counter until it is done.
+ * buffer that should be audible to be present first. The workbench is rendered
+ * immediately either way (the trajectories need no audio) with Play disabled
+ * and an honest status line until the audio is ready.
  *
- * The cost is memory: the design document's section 9 measures 200 tracks x
- * 30 s at ~1 GB decoded, and names fetch-on-demand plus a "play all" mixdown as
- * the mitigations. Those are worth building when track counts get there; they
- * are not worth building before the synchronised case works.
+ * EAGER (short files). Fetch every track, decode it, register it. Solo and mute
+ * are then pure gain changes with no network in the loop: instant, offline, and
+ * exactly what comparing two partials against each other wants.
+ *
+ * BOUNDED (long files). Fetching everything stops being possible. One track of
+ * ten-minute audio is ~106 MB decoded and a long file can yield forty of them,
+ * so eager loading would ask the tab for ~4.3 GB and it would die. Instead:
+ *
+ *   - GET /api/jobs/{id}/mixdown is the sum of every track as ONE buffer, and
+ *     with nothing excluded it is byte-identical to the uploaded file. So
+ *     "play everything" costs one buffer, not forty, at any duration.
+ *   - `?exclude=3,7` is the same trick for muting: the server answers with
+ *     everything-except-those, still as one buffer.
+ *   - Soloing needs the soloed tracks themselves, so those are fetched on
+ *     demand and kept in a small least-recently-used cache.
+ *
+ * The switch is a memory estimate rather than a duration — see
+ * PLAYBACK_MEMORY_BUDGET_BYTES. A phrase never leaves eager mode, so nothing
+ * about the good experience regresses for the case this tool is mostly used on.
+ *
+ * WHAT MUST STAY TRUE IN BOTH MODES
+ * ---------------------------------
+ * With nothing muted and nothing soloed, what comes out of the speakers is the
+ * uploaded file. In eager mode that is transport.js's arithmetic: a unity-gain
+ * sum of buffers the server guarantees sum to the original. In bounded mode it
+ * is the mixdown endpoint's own guarantee, which is asserted in
+ * tests/test_mixdown.py. The one way to break the bounded case would be to play
+ * an individually-fetched track *on top of* a mix that already contains it, so
+ * tracks fetched for soloing are registered `soloOnly` and are silent unless
+ * soloed. That rule lives in transport.js, in one place, deliberately.
  *
  * ERRORS ARE PAGE CONTENT, NOT CONSOLE CONTENT
  * --------------------------------------------
@@ -42,11 +68,11 @@
  * gets the message without losing the session. Nothing reports a failure only
  * to the console.
  *
- * STATUS: implemented (Phase 5). The exported contract is unchanged from the
- * scaffold.
+ * STATUS: implemented (Phase 5; bounded playback and pitch grouping added in
+ * Phase 6). The exported contract is unchanged from the scaffold.
  */
 
-import { Transport } from './transport.js';
+import { Transport, MIX_TRACK_ID } from './transport.js';
 import { drawTrajectory, drawWaveform, clear } from './waveform.js';
 
 // =============================================================================
@@ -78,8 +104,73 @@ const SOCKET_OPEN_TIMEOUT_MS = 2000;
  */
 const AUDIO_FETCH_CONCURRENCY = 4;
 
+/** Bytes per sample of a decoded AudioBuffer. Web Audio is 32-bit float, always. */
+const BYTES_PER_SAMPLE = 4;
+
+/**
+ * ADJUSTABLE. How much decoded audio this page will hold before it stops
+ * loading every track and switches to the bounded strategy. 600 MB.
+ *
+ * WHY 600 MB, AND WHY A BUDGET RATHER THAN A DURATION.
+ *
+ * The quantity that kills the tab is decoded bytes, and that is a product of
+ * three things — duration, sample rate and track count — so any single one of
+ * them is a poor proxy. A ten-minute file with five tracks is comfortable; a
+ * thirty-second file with two hundred is not, and it is the same ~1 GB the
+ * design document's section 9 measured. Estimating the product catches both.
+ *
+ * The number itself is chosen from what a browser tab actually survives. A
+ * decoded AudioBuffer lives outside the JavaScript heap, so the ~4 GB heap cap
+ * is not the ceiling — the renderer process is, and it is killed well before
+ * the machine runs out. 600 MB leaves room for the DOM, forty canvases, the
+ * decoder's own scratch space (decodeAudioData holds the encoded bytes AND the
+ * decoded output at once, so a decode transiently costs ~1.25x the buffer) and
+ * whatever else the user has open. It is deliberately conservative: crossing
+ * into bounded mode costs a little latency on solo, whereas guessing too high
+ * costs the user the whole session.
+ *
+ * At the ten-minute ceiling one track is ~106 MB, so this admits the mix plus
+ * four cached tracks — see BOUNDED_CACHE_MAX_TRACKS.
+ *
+ * Raise it if you are targeting machines you control and have measured them.
+ */
+const PLAYBACK_MEMORY_BUDGET_BYTES = 600 * 1024 * 1024;
+
+/**
+ * ADJUSTABLE. Ceiling on how many individually-fetched tracks the bounded
+ * strategy keeps decoded at once.
+ *
+ * The budget above already limits this by size; this is a second limit by
+ * count, for the other shape of long file — hundreds of short tracks, where the
+ * budget alone would happily cache a hundred of them and spend the time
+ * decoding audio nobody asked to hear. Twelve is enough for the comparison this
+ * tool is for (A/B a handful of partials) without becoming a second eager mode.
+ */
+const BOUNDED_CACHE_MAX_TRACKS = 12;
+
+/**
+ * ADJUSTABLE. Hard ceiling on how many times one user action may re-reconcile.
+ *
+ * A reconcile can revert a control it could not honour and run again against
+ * the corrected intent, which is a loop, and loops that make network requests
+ * need a bound that does not depend on the logic inside them being right. Four
+ * is far more than the two the design actually uses (act, then settle).
+ */
+const APPLY_MAX_PASSES = 4;
+
 /** Fallback text when a response carries no usable message of its own. */
 const GENERIC_ERROR = 'Something went wrong. Please try another file.';
+
+/**
+ * The one line the interface owes a user whose file went into bounded mode.
+ *
+ * Kept here rather than buried in the strategy because it is a promise about
+ * behaviour, and a user who notices that solo takes a moment deserves to find
+ * the reason on screen rather than infer it. Never hidden, never folded away.
+ */
+const BOUNDED_MODE_NOTE =
+  'Long file: playing one combined stream, and loading individual tracks only ' +
+  'when you solo them — so solo and mute take a moment.';
 
 // =============================================================================
 // Small DOM and formatting helpers
@@ -131,6 +222,78 @@ function formatPercent(ratio) {
 function formatHz(hz) {
   if (!Number.isFinite(hz) || hz <= 0) return 'broadband';
   return hz >= 1000 ? `${(hz / 1000).toFixed(2)} kHz` : `${hz.toFixed(1)} Hz`;
+}
+
+/** Bytes as a whole number of megabytes — for status text, not for arithmetic. */
+function formatMegabytes(bytes) {
+  const mb = Number.isFinite(bytes) && bytes > 0 ? bytes / (1024 * 1024) : 0;
+  return `${Math.round(mb)} MB`;
+}
+
+/**
+ * Decoded bytes one track of this analysis will occupy.
+ *
+ * duration x sample rate x 4 bytes, mono. The tracks are all rendered over the
+ * whole timeline (a partial that dies early is padded with silence, not
+ * truncated), so every track costs the same and the mixdown costs one more.
+ *
+ * A caveat worth knowing: decodeAudioData resamples to the AudioContext's rate,
+ * so a 44.1 kHz file decoded into a 48 kHz context is ~9% larger than this says.
+ * The estimate is a threshold test, not an allocator, and the budget it is
+ * compared against is conservative enough to absorb that.
+ *
+ * @param {object} summary AnalysisSummary
+ * @returns {number} bytes
+ */
+function trackDecodedBytes(summary) {
+  const duration = Number(summary && summary.duration_s);
+  const rate = Number(summary && summary.sample_rate);
+  if (!Number.isFinite(duration) || !Number.isFinite(rate)) return 0;
+  return Math.max(0, duration) * Math.max(0, rate) * BYTES_PER_SAMPLE;
+}
+
+/**
+ * Decoded bytes the eager strategy would need for this whole analysis.
+ * @param {object} summary AnalysisSummary
+ * @returns {number} bytes
+ */
+function estimateDecodedBytes(summary) {
+  const count = ((summary && summary.tracks) || []).length;
+  return trackDecodedBytes(summary) * count;
+}
+
+/**
+ * Whether two sets hold the same members.
+ *
+ * Used to decide whether a fallback actually moved the user's intent. "Did this
+ * change anything" is the question that makes the reconcile loop terminate, so
+ * it is asked explicitly rather than assumed.
+ *
+ * @param {Set<number>} a
+ * @param {Set<number>} b
+ * @returns {boolean}
+ */
+function sameSet(a, b) {
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
+}
+
+/**
+ * A stable key for a set of excluded track ids.
+ *
+ * Sorted numerically and de-duplicated, so {7,3} and {3,7,3} produce the same
+ * string. That matters because the key is what decides whether the mix we
+ * already hold still answers the question being asked — an unsorted key would
+ * refetch ~106 MB just because the user muted two tracks in the other order.
+ *
+ * @param {Iterable<number>} ids
+ * @returns {string} e.g. "3,7", or "" for nothing excluded
+ */
+function excludeKey(ids) {
+  return [...new Set(ids)].sort((a, b) => a - b).join(',');
 }
 
 /**
@@ -243,6 +406,29 @@ class ApiClient {
    */
   async trackAudio(jobId, trackId) {
     const response = await this._fetch(`${this._jobPath(jobId)}/tracks/${Number(trackId)}/audio`);
+    if (!response.ok) throw await this._error(response);
+    return response.arrayBuffer();
+  }
+
+  /**
+   * Fetch the sum of every track — optionally minus a few — as one WAV.
+   *
+   * This is the endpoint that makes long files playable at all. The server
+   * guarantees that with nothing excluded the bytes are the uploaded file
+   * itself, so the browser can hold one buffer where it would otherwise hold
+   * forty. `exclude` extends the same trick to muting.
+   *
+   * The ids are sent as one comma-separated `exclude` parameter because that is
+   * the shape the endpoint declares; URLSearchParams handles the encoding, so
+   * nothing here builds a query string by concatenation.
+   *
+   * @param {string} jobId
+   * @param {Iterable<number>} [excludeIds]
+   * @returns {Promise<ArrayBuffer>}
+   */
+  async mixdown(jobId, excludeIds = []) {
+    const query = new URLSearchParams({ exclude: excludeKey(excludeIds) });
+    const response = await this._fetch(`${this._jobPath(jobId)}/mixdown?${query}`);
     if (!response.ok) throw await this._error(response);
     return response.arrayBuffer();
   }
@@ -610,7 +796,8 @@ class JobFeed {
 class TrackRow {
   /**
    * @param {object} track TrackSummary from GET /api/jobs/{id}/tracks
-   * @param {{durationS: number, onMute: Function, onSolo: Function, exportUrlFor: Function}} deps
+   * @param {{durationS: number, onMute: Function, onSolo: Function,
+   *          exportUrlFor: Function, inGroup?: boolean}} deps
    */
   constructor(track, deps) {
     this._track = track;
@@ -630,6 +817,58 @@ class TrackRow {
   /** @returns {HTMLElement} */
   get element() {
     return this._root;
+  }
+
+  /** The bare note name this row groups under, e.g. "G4". Empty for the residual. */
+  get pitch() {
+    return typeof this._track.pitch === 'string' ? this._track.pitch : '';
+  }
+
+  /** Share of total energy, 0..1. */
+  get energyRatio() {
+    const ratio = Number(this._track.energy_ratio);
+    return Number.isFinite(ratio) ? ratio : 0;
+  }
+
+  /** The name this row shows, falling back to the track number. */
+  get label() {
+    return this._track.label || `Track ${this._track.track_id}`;
+  }
+
+  /** This track's (time_s, hz, amplitude) triples. A group row overlays these. */
+  get trajectory() {
+    return Array.isArray(this._track.trajectory) ? this._track.trajectory : [];
+  }
+
+  /** Amplitude-weighted mean frequency, in Hz. Zero for the residual. */
+  get meanFrequencyHz() {
+    const hz = Number(this._track.mean_frequency_hz);
+    return Number.isFinite(hz) ? hz : 0;
+  }
+
+  /** When this track starts and stops sounding, in seconds. */
+  get startTimeS() {
+    const value = Number(this._track.start_time_s);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  /** @see startTimeS */
+  get endTimeS() {
+    const value = Number(this._track.end_time_s);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  /**
+   * Whether this row's audio was asked for and could not be had.
+   *
+   * Read by the playback strategies to decide whether the row's controls can do
+   * anything: in eager mode a row needs a decoded buffer, in bounded mode it
+   * needs only to not have failed, because its audio is fetched on demand.
+   *
+   * @returns {boolean}
+   */
+  get audioFailed() {
+    return this._audioFailed;
   }
 
   /**
@@ -690,7 +929,30 @@ class TrackRow {
   setBuffer(buffer) {
     this._buffer = buffer;
     this._root.dataset.audio = 'ready';
+    // Arriving audio can change which of the two views is on screen (see
+    // _showsTrajectory), and role="img" means the accessible name IS the
+    // picture — so the name has to be re-derived, not just the pixels.
+    this._refreshCanvasLabel();
     if (this._mode === 'amplitude' || !this._hasTrajectory()) this.draw();
+  }
+
+  /**
+   * Give up this row's decoded audio.
+   *
+   * The bounded strategy caches only a few tracks at a time, and evicting one
+   * from that cache frees nothing while this row still references the same
+   * AudioBuffer — the buffer is the hundred megabytes. So eviction reaches in
+   * here, exactly as it reaches into the Transport.
+   *
+   * Not a failure: the row stays fully usable, and soloing it again simply
+   * fetches it again.
+   */
+  clearBuffer() {
+    if (!this._buffer) return;
+    this._buffer = null;
+    if (!this._audioFailed) delete this._root.dataset.audio;
+    this._refreshCanvasLabel();
+    this.draw();
   }
 
   /** Mark this row's audio as unavailable, and say so where it is visible. */
@@ -710,10 +972,20 @@ class TrackRow {
    */
   setViewMode(mode) {
     this._mode = mode;
-    // role="img" means the accessible name IS the picture, so it has to follow
-    // what is actually drawn rather than what was drawn when the row was built.
-    this._canvas.setAttribute('aria-label', this._canvasLabel());
+    this._refreshCanvasLabel();
     this.draw();
+  }
+
+  /**
+   * Re-derive the canvas's accessible name from what it is about to draw.
+   *
+   * role="img" means the accessible name IS the picture, so it has to follow
+   * what is actually drawn rather than what was drawn when the row was built.
+   * Three things can change that: the view toggle, audio arriving, and audio
+   * being evicted — hence one function all three call.
+   */
+  _refreshCanvasLabel() {
+    this._canvas.setAttribute('aria-label', this._canvasLabel());
   }
 
   /**
@@ -772,9 +1044,18 @@ class TrackRow {
    * the label cannot claim a view the canvas is not showing — the residual has
    * no trajectory and therefore never draws one, whatever the global toggle
    * says.
+   *
+   * The `!this._buffer` clause is the other half of the same honesty. The
+   * amplitude view is drawn from decoded audio, and in bounded mode most rows
+   * have none — their audio is only fetched if you solo them. Without this the
+   * amplitude toggle would blank forty canvases and say nothing about why;
+   * with it, a row that cannot draw an envelope keeps drawing the trajectory it
+   * does have, and the accessible name (which comes through here too) says
+   * "frequency over time" rather than claiming an envelope that is not there.
    */
   _showsTrajectory() {
-    return this._mode === 'trajectory' && this._hasTrajectory();
+    if (!this._hasTrajectory()) return false;
+    return this._mode === 'trajectory' || !this._buffer;
   }
 
   /** The canvas's accessible name, describing the view currently drawn. */
@@ -867,10 +1148,13 @@ class TrackRow {
     });
     if (midEnabled) mid.addEventListener('click', () => deps.exportUrlFor(this.trackId, 'mid'));
 
+    // `is-child` only changes how the row is indented and dimmed. It is not a
+    // second kind of row: a track inside a pitch group is the same track with
+    // the same controls and the same exports, which is the point of grouping.
     this._root = el(
       'div',
       {
-        className: 'track-row',
+        className: deps.inGroup ? 'track-row is-child' : 'track-row',
         attrs: { role: 'listitem', 'data-kind': track.kind, 'data-track-id': track.track_id },
       },
       [
@@ -890,6 +1174,894 @@ class TrackRow {
         el('div', { className: 'track-exports' }, [wav, mid]),
       ]
     );
+  }
+}
+
+// =============================================================================
+// One pitch group
+// =============================================================================
+
+/**
+ * A collapsible parent for every occurrence of one pitch.
+ *
+ * WHY THIS EXISTS. A ten-minute recording plays the same note many times, and
+ * each occurrence is legitimately its own track — they are separate notes, not
+ * a mistake to be merged. But as a flat list that reads as forty near-identical
+ * rows ("G4 -1c + 25 harmonics", "G4 + 58 harmonics", "G4 -2c + 33 harmonics")
+ * and the list stops being scannable. Collapsing them under one "G4" row that
+ * says how many there are, and opening on request, keeps both facts: the note
+ * is one thing, and it happened seven times.
+ *
+ * WHAT IT IS NOT. It is not a new kind of audio. The group has no track of its
+ * own on the server and no export of its own; its mute and solo simply fan out
+ * to its members, and every member row underneath is still independently
+ * mutable, soloable and exportable. Nothing is reachable only through the
+ * group, which is what makes collapsing it safe.
+ *
+ * A GROUP OF ONE IS NOT A GROUP. Pitches that occur once render as an ordinary
+ * row — see App.renderWorkbench. A disclosure triangle you must open to find a
+ * single row is ceremony, and on a short file it would be every row.
+ */
+class TrackGroupRow {
+  /**
+   * @param {string} pitch e.g. "G4"
+   * @param {Array<TrackRow>} rows the occurrence rows, in display order
+   * @param {{durationS: number, onMute: Function, onSolo: Function}} deps
+   */
+  constructor(pitch, rows, deps) {
+    this._pitch = pitch;
+    this._rows = rows;
+    this._durationS = deps.durationS;
+    this._expanded = false;
+    this._build(deps);
+  }
+
+  /** @returns {HTMLElement} */
+  get element() {
+    return this._root;
+  }
+
+  /** Every track id this group speaks for. @returns {Array<number>} */
+  get trackIds() {
+    return this._rows.map((row) => row.trackId);
+  }
+
+  /**
+   * Combined share of total energy.
+   *
+   * Summed rather than averaged: the occurrences are disjoint in time, so their
+   * energies add, and the sum is what tells you how much of the recording this
+   * note actually is. It is also what the list is ordered by.
+   *
+   * @returns {number} 0..1
+   */
+  get energyRatio() {
+    return this._rows.reduce((total, row) => total + row.energyRatio, 0);
+  }
+
+  /**
+   * Reflect the current mute and solo picture onto the group's two toggles.
+   *
+   * Three states, not two, because a group can be half muted — and saying so is
+   * the whole reason the parent is trustworthy. aria-pressed="mixed" is the ARIA
+   * value for exactly this, so a screen reader says "partially pressed" without
+   * any invented markup. The dashed border in app.css is the non-colour cue
+   * that carries the same fact visually (WCAG 1.4.1).
+   *
+   * @param {Set<number>} muted
+   * @param {Set<number>} soloed
+   */
+  refresh(muted, soloed) {
+    this._applyAggregate(this._muteButton, muted, 'Mute', 'Unmute');
+    this._applyAggregate(this._soloButton, soloed, 'Solo', 'Unsolo');
+  }
+
+  /**
+   * Enable or disable the group's toggles.
+   * @param {boolean} playable
+   */
+  setPlayable(playable) {
+    const usable = Boolean(playable);
+    this._muteButton.disabled = !usable;
+    this._soloButton.disabled = !usable;
+  }
+
+  /**
+   * Show or hide the occurrence rows.
+   *
+   * The children are hidden with the `hidden` attribute rather than moved out
+   * of the DOM, so their canvases keep their pixels and their buttons keep
+   * their state across a collapse. The cost is that a hidden canvas measures
+   * 0x0 and cannot be drawn, which is why expanding asks the caller to redraw.
+   *
+   * @param {boolean} expanded
+   */
+  setExpanded(expanded) {
+    this._expanded = Boolean(expanded);
+    this._childList.hidden = !this._expanded;
+    this._root.dataset.expanded = this._expanded ? 'true' : 'false';
+    this._toggleButton.setAttribute('aria-expanded', this._expanded ? 'true' : 'false');
+    this._toggleButton.setAttribute('aria-label', this._toggleLabel());
+    this._toggleGlyph.textContent = this._expanded ? '▾' : '▸';
+  }
+
+  /**
+   * Draw every occurrence's trajectory onto one canvas.
+   *
+   * The honest picture of a group is all of its members at once: the note sits
+   * at the same height each time, so the canvas shows you where in the piece
+   * that note occurs, which is precisely what the parent row is claiming to
+   * summarise. Deliberately drawTrajectory once per member rather than a new
+   * drawing primitive — the members are drawn by the same code that draws them
+   * individually, so the parent cannot disagree with its own children.
+   *
+   * There is no amplitude view here: a group has no single decoded buffer to
+   * take an envelope from, and inventing one by summing would claim a track
+   * that does not exist. The accessible name says which view this is.
+   */
+  draw() {
+    const canvas = this._canvas;
+    const rect = canvas.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height > 0)) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    clear(g);
+
+    // One clear, then every member on top of it. drawTrajectory save()s and
+    // restore()s its own style state, so the calls do not contaminate each
+    // other and the order does not matter.
+    for (const row of this._rows) {
+      drawTrajectory(g, row.trajectory, this._durationS);
+    }
+  }
+
+  /**
+   * Set one toggle from how many of the group's members are in `active`.
+   *
+   * @param {HTMLButtonElement} button
+   * @param {Set<number>} active
+   * @param {string} onVerb what pressing it will do when it is not fully on
+   * @param {string} offVerb what pressing it will do when it is fully on
+   */
+  _applyAggregate(button, active, onVerb, offVerb) {
+    const ids = this.trackIds;
+    const count = ids.filter((id) => active.has(id)).length;
+    const state = count === 0 ? 'false' : count === ids.length ? 'true' : 'mixed';
+    button.setAttribute('aria-pressed', state);
+    // The accessible name says what the NEXT press does, because that is what a
+    // user is deciding about. Pressing a partly-muted group mutes the rest,
+    // which is why "mixed" reads the same as "off" here.
+    const verb = state === 'true' ? offVerb : onVerb;
+    button.setAttribute('aria-label', `${verb} all ${ids.length} ${this._pitch} tracks`);
+  }
+
+  /** The disclosure button's accessible name, describing what pressing it does. */
+  _toggleLabel() {
+    const n = this._rows.length;
+    return this._expanded
+      ? `Hide the ${n} ${this._pitch} tracks`
+      : `Show the ${n} ${this._pitch} tracks`;
+  }
+
+  /** The one-line summary under the pitch name. */
+  _metaText() {
+    const n = this._rows.length;
+    // The mean frequency of the first occurrence stands for the group: they are
+    // the same note by construction, so they agree to within a few cents, and
+    // averaging would only add a digit of false precision.
+    return [
+      `${n} occurrence${n === 1 ? '' : 's'}`,
+      formatPercent(this.energyRatio),
+      formatHz(this._rows[0] ? this._rows[0].meanFrequencyHz : 0),
+    ].join(' · ');
+  }
+
+  /** The canvas's accessible name. Describes the overlay, not one track. */
+  _canvasLabel() {
+    const n = this._rows.length;
+    return (
+      `${this._pitch}: frequency over time for all ${n} occurrence${n === 1 ? '' : 's'}, ` +
+      `overlaid on one timeline`
+    );
+  }
+
+  /**
+   * Build the group's DOM.
+   * @param {{onMute: Function, onSolo: Function}} deps
+   */
+  _build(deps) {
+    const pitch = this._pitch;
+    const ids = this.trackIds;
+
+    // A real <button> with aria-expanded and aria-controls, not a styled span:
+    // disclosure is a solved accessibility problem, and Enter, Space and the
+    // screen reader's own "expand" affordance all come free with the element.
+    this._toggleGlyph = el('span', { text: '▸', attrs: { 'aria-hidden': 'true' } });
+    // A DOM id has to be unique and must not start with a digit; the pitch can
+    // be "A#4" and the residual's neighbours can be anything, so the id is
+    // built from the member track ids, which are unique integers by definition.
+    this._childListId = `group-${ids.join('-')}-tracks`;
+    this._toggleButton = el(
+      'button',
+      {
+        className: 'track-disclosure',
+        attrs: {
+          type: 'button',
+          'aria-expanded': 'false',
+          'aria-controls': this._childListId,
+          'aria-label': this._toggleLabel(),
+        },
+      },
+      [this._toggleGlyph]
+    );
+    this._toggleButton.addEventListener('click', () => {
+      this.setExpanded(!this._expanded);
+      // Children that were hidden had zero-sized canvases and could not draw.
+      // The caller owns redrawing because it also owns the resize observer.
+      if (typeof deps.onToggle === 'function') deps.onToggle(this);
+    });
+
+    this._muteButton = el('button', {
+      className: 'track-toggle mute',
+      text: 'M',
+      attrs: { type: 'button', 'aria-pressed': 'false', 'aria-label': `Mute all ${ids.length} ${pitch} tracks` },
+    });
+    this._muteButton.addEventListener('click', () => {
+      // Derived from the buttons' own state, which refresh() keeps as a
+      // reflection of the App's intent: a fully muted group unmutes, anything
+      // else mutes the rest. That makes a half-muted group one press from tidy.
+      const fullyOn = this._muteButton.getAttribute('aria-pressed') === 'true';
+      deps.onMute(ids, !fullyOn);
+    });
+
+    this._soloButton = el('button', {
+      className: 'track-toggle solo',
+      text: 'S',
+      attrs: { type: 'button', 'aria-pressed': 'false', 'aria-label': `Solo all ${ids.length} ${pitch} tracks` },
+    });
+    this._soloButton.addEventListener('click', () => {
+      const fullyOn = this._soloButton.getAttribute('aria-pressed') === 'true';
+      deps.onSolo(ids, !fullyOn);
+    });
+
+    this._canvas = el('canvas', {
+      attrs: { role: 'img', 'aria-label': this._canvasLabel() },
+    });
+
+    const head = el('div', { className: 'track-row track-group-head' }, [
+      el('div', { className: 'track-controls' }, [this._muteButton, this._soloButton]),
+      el('div', { className: 'track-id-cell is-group' }, [
+        this._toggleButton,
+        el('div', { className: 'track-id-text' }, [
+          el('span', { className: 'track-label', text: pitch, attrs: { title: pitch } }),
+          el('span', { className: 'track-meta', text: this._metaText() }),
+        ]),
+      ]),
+      el('div', { className: 'track-canvas' }, [
+        this._canvas,
+        el('span', { className: 'track-cursor', attrs: { 'aria-hidden': 'true' } }),
+      ]),
+      // The export column is deliberately empty. There is no server endpoint
+      // that exports a group, and a button that cannot work is worse than no
+      // button; the occurrences underneath each carry their own.
+      el('div', { className: 'track-exports' }),
+    ]);
+
+    // A nested list inside the group's own list item. That is what ARIA's list
+    // semantics are for, and it means a screen reader announces "3 items"
+    // inside "G4" rather than flattening the occurrences into the main list.
+    this._childList = el(
+      'div',
+      {
+        className: 'track-group-children',
+        attrs: { role: 'list', id: this._childListId, hidden: true, 'aria-label': `${pitch} tracks` },
+      },
+      this._rows.map((row) => row.element)
+    );
+
+    this._root = el(
+      'div',
+      {
+        className: 'track-group',
+        attrs: { role: 'listitem', 'data-pitch': pitch, 'data-expanded': 'false' },
+      },
+      [head, this._childList]
+    );
+  }
+}
+
+// =============================================================================
+// Playback strategies
+// =============================================================================
+
+/**
+ * How the workbench gets sound out of the server.
+ *
+ * Two implementations, one interface, chosen by App from a memory estimate.
+ * They are separate classes rather than branches inside App because they differ
+ * in almost everything that matters — what is fetched, when, how much is held —
+ * and because "the eager path is exactly what it always was" is much easier to
+ * believe when it is a class nobody edited than when it is every other line of
+ * an if-statement.
+ *
+ * THE CONTRACT
+ *   prepare()          load whatever the first Play needs. Rejects on failure.
+ *   apply(muted, solo) make the audible mix match that intent. Never rejects;
+ *                      it reports what it could not do so the caller can put
+ *                      the controls back.
+ *   isRowPlayable(row) whether a row's mute/solo can do anything yet.
+ *   note               one line for the UI, or '' when there is nothing to say.
+ *
+ * `apply` deliberately reports rather than throws. A failed fetch mid-session
+ * is not fatal to the workbench — the analysis is still on screen and still
+ * exportable — so the strategy hands back the ids it could not honour and the
+ * App reverts those controls and banners the reason. A control that stays lit
+ * while the audio does not match it is the one outcome neither mode allows.
+ */
+class PlaybackStrategy {
+  /**
+   * @param {{api: ApiClient, jobId: string, ctx: AudioContext, transport: Transport,
+   *          summary: object, rowFor: Function, setStatus: Function,
+   *          isCurrent: Function}} deps
+   */
+  constructor(deps) {
+    this._api = deps.api;
+    this._jobId = deps.jobId;
+    this._ctx = deps.ctx;
+    this._transport = deps.transport;
+    this._summary = deps.summary;
+    this._rowFor = deps.rowFor;
+    this._setStatus = deps.setStatus;
+    /** False once a newer analysis has superseded this one. Guards every await. */
+    this._isCurrent = deps.isCurrent;
+  }
+
+  /** @returns {string} the honesty line for the UI, or '' */
+  get note() {
+    return '';
+  }
+
+  /**
+   * Something the user needs told about how loading went, or ''.
+   *
+   * Separate from `note`, which describes the strategy itself: this one is
+   * about this particular run — "some tracks are missing and the mix will not
+   * reproduce the original". It is announced as well as shown, because it
+   * qualifies the one claim this product makes.
+   *
+   * @returns {string}
+   */
+  get loadWarning() {
+    return '';
+  }
+
+  /** @returns {Promise<void>} */
+  async prepare() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @param {Set<number>} muted
+   * @param {Set<number>} soloed
+   * @returns {Promise<{revertSolos: Array<number>, revertMutedTo: ?Set<number>, message: ?string}>}
+   */
+  async apply() {
+    return { revertSolos: [], revertMutedTo: null, message: null };
+  }
+
+  /** @param {TrackRow} row @returns {boolean} */
+  isRowPlayable(row) {
+    return row.hasAudio;
+  }
+
+  /** Release anything held beyond what the Transport owns. */
+  dispose() {}
+
+  /** All track ids in this analysis, including the residual. @returns {Array<number>} */
+  _allTrackIds() {
+    return (this._summary.tracks || []).map((track) => track.track_id);
+  }
+
+  /**
+   * Fetch and decode one WAV.
+   * @param {Promise<ArrayBuffer>} request
+   * @returns {Promise<?AudioBuffer>} null if the session was superseded
+   */
+  async _decode(request) {
+    const bytes = await request;
+    const buffer = await decodeAudio(this._ctx, bytes);
+    // Guard against a session that was reset (new upload, or an error) while
+    // this fetch was in flight — registering into a dead transport would
+    // resurrect the old analysis's audio under the new one's rows.
+    return this._isCurrent() ? buffer : null;
+  }
+}
+
+/**
+ * Load every track up front. The original behaviour, unchanged.
+ *
+ * Once prepare() has finished, nothing here touches the network again: mute and
+ * solo are a single batched gain update. That is the experience worth keeping
+ * for anything short enough to afford it.
+ */
+class EagerPlayback extends PlaybackStrategy {
+  constructor(deps) {
+    super(deps);
+    /** Set when some tracks never arrived, so the mix is no longer exact. */
+    this._loadWarning = '';
+  }
+
+  get loadWarning() {
+    return this._loadWarning;
+  }
+
+  /**
+   * Fetch, decode, and register every track's PCM.
+   *
+   * Progress is reported as a count rather than a spinner because a spinner
+   * cannot tell you whether 3 of 200 tracks have arrived or 199.
+   */
+  async prepare() {
+    const tracks = (this._summary.tracks || []).slice();
+    const total = tracks.length;
+
+    // Counted, not inferred. `loaded` is incremented where a buffer actually
+    // reaches the Transport, because that is the only event that makes a track
+    // audible — deriving it as `total - failures.length` would count every
+    // track we never got around to asking for as a success.
+    let loaded = 0;
+    const failures = [];
+    this._setStatus(`Loading audio — 0 of ${total}`);
+
+    /**
+     * Record a track the user will not hear, and say so on its row.
+     *
+     * Every path that gives up on a track goes through here, so the count in
+     * the summary below and the marks on the rows can never disagree.
+     */
+    const recordFailure = (track) => {
+      failures.push(track.label || `Track ${track.track_id}`);
+      const failedRow = this._rowFor(track.track_id);
+      if (failedRow) failedRow.setAudioFailed();
+    };
+
+    // A fixed pool of workers pulling from one queue: simpler than batching,
+    // and it keeps exactly AUDIO_FETCH_CONCURRENCY requests in flight even when
+    // one track is much larger than the others.
+    const worker = async () => {
+      while (tracks.length > 0) {
+        const track = tracks.shift();
+        const row = this._rowFor(track.track_id);
+        try {
+          const buffer = await this._decode(this._api.trackAudio(this._jobId, track.track_id));
+          if (buffer === null) return; // superseded by a newer analysis
+          this._transport.addTrack(track.track_id, buffer);
+          if (row) row.setBuffer(buffer);
+          loaded += 1;
+        } catch (err) {
+          recordFailure(track);
+          if (err instanceof ApiError && err.status === 404) {
+            // The session expired mid-load. Nothing else will succeed either,
+            // so stop asking — but a track abandoned here is still a track the
+            // user will not hear, and it has to be counted and marked as one.
+            // Draining the queue silently would leave the summary below
+            // reporting only the handful that happened to be in flight, which
+            // is how "1 of 200 tracks loaded" gets announced as "3 failed".
+            // splice() is atomic against the other workers: there is no await
+            // between it and the loop, so no worker can pick up a track that
+            // is about to be recorded as abandoned.
+            for (const abandoned of tracks.splice(0)) recordFailure(abandoned);
+          }
+        } finally {
+          if (this._isCurrent()) {
+            this._setStatus(`Loading audio — ${loaded + failures.length} of ${total}`);
+          }
+        }
+      }
+    };
+
+    const pool = Math.max(1, Math.min(AUDIO_FETCH_CONCURRENCY, total));
+    await Promise.all(Array.from({ length: pool }, worker));
+
+    if (!this._isCurrent()) return;
+
+    if (loaded === 0) {
+      throw new ApiError(
+        'The analysis finished but none of its audio could be loaded. ' +
+          'The session may have expired — please try the file again.',
+        0
+      );
+    }
+
+    if (failures.length > 0) {
+      // Say it plainly, on screen AND out loud. Silently playing 198 of 200
+      // tracks would break the one claim this product makes about its own mix.
+      this._loadWarning =
+        `${failures.length} of ${total} tracks could not be loaded and will be silent. ` +
+        'The mix will not reproduce the original exactly.';
+      this._setStatus(this._loadWarning);
+    } else {
+      this._setStatus(`${total} track${total === 1 ? '' : 's'} ready.`);
+    }
+  }
+
+  /**
+   * Every buffer is already here, so this is one batched gain update and no
+   * network at all. Nothing can fail, hence nothing to revert.
+   */
+  async apply(muted, soloed) {
+    this._transport.setMixState(muted, soloed);
+    return { revertSolos: [], revertMutedTo: null, message: null };
+  }
+}
+
+/**
+ * Play one server-side mix, and fetch individual tracks only when soloed.
+ *
+ * THE ARRANGEMENT, IN FULL. There are exactly three configurations, and the
+ * point of listing them is that in every one of them a given track's audio is
+ * audible through exactly ONE path — never through both the mix and a
+ * separately-fetched copy, which would double it.
+ *
+ *   (1) NOTHING SOLOED.  The mix holds `mixdown?exclude=<muted>` and is the
+ *       only audible source. Cached tracks are registered `soloOnly`, so they
+ *       are silent. With nothing muted the exclude list is empty and the mix
+ *       is the uploaded file, byte for byte.
+ *
+ *   (2) A FEW TRACKS SOLOED (at most `_capacity` of them). Each soloed,
+ *       unmuted track is fetched, cached and registered `soloOnly`; the mix is
+ *       muted outright. The audible sum is exactly the soloed tracks, which is
+ *       what solo means, and re-soloing something already cached costs nothing.
+ *
+ *   (3) MORE SOLOED THAN FIT (soloing a whole pitch group, usually). Holding
+ *       them individually would be the memory problem again, so the same
+ *       endpoint answers the same question in one buffer: the mix becomes
+ *       `mixdown?exclude=<everything except the soloed tracks>`, and every
+ *       cached individual track is evicted. Audibly identical to (2); one
+ *       buffer instead of forty.
+ *
+ * The mix is only fetched when it is about to be heard. While solos are up in
+ * case (2) the mix is silent, so a mute pressed there costs no download at all —
+ * it is settled later, when the last solo is cleared and the mix is needed.
+ */
+class BoundedPlayback extends PlaybackStrategy {
+  constructor(deps) {
+    super(deps);
+
+    /**
+     * Decoded tracks, most-recently-used last.
+     *
+     * A Map iterates in insertion order, so "delete then set" on every use is
+     * all an LRU needs — no separate recency list to keep in step with it.
+     * @type {Map<number, AudioBuffer>}
+     */
+    this._cache = new Map();
+
+    /**
+     * The exclude list the currently registered mix buffer actually represents,
+     * or null when no mix has ever loaded. Compared against what the user's
+     * intent asks for; equal means the ~106 MB download can be skipped.
+     *
+     * Only ever advanced on a *successful* load, so after a failed one it still
+     * describes the buffer we are still holding. That is what makes the failure
+     * path terminate: the app falls back to the state this key names, and the
+     * next reconcile finds the key already correct and asks for nothing.
+     * @type {?string}
+     */
+    this._mixKey = null;
+
+    /**
+     * What the held mix's exclude list *meant*: 'mute' if it was
+     * everything-minus-the-muted-tracks, 'solo' if it was
+     * everything-minus-the-unsoloed-tracks.
+     *
+     * The two look identical (a list of ids) and mean opposite things, so
+     * reading a solo mix's list back as a mute picture would light up the mute
+     * button on thirty tracks the user never touched. Recording which one it is
+     * costs a field and removes the whole class of mistake.
+     * @type {?('mute'|'solo')}
+     */
+    this._mixKind = null;
+
+    // How many individual tracks fit alongside the mix inside the budget. The
+    // "- 1" is the mix itself, which is the same size as a track because every
+    // track is rendered over the whole timeline.
+    const perTrack = trackDecodedBytes(this._summary) || 1;
+    const affordable = Math.floor(PLAYBACK_MEMORY_BUDGET_BYTES / perTrack) - 1;
+    this._capacity = Math.max(1, Math.min(BOUNDED_CACHE_MAX_TRACKS, affordable));
+  }
+
+  get note() {
+    return BOUNDED_MODE_NOTE;
+  }
+
+  /** The first Play needs one thing: the whole mix. */
+  async prepare() {
+    this._setStatus('Loading the combined mix…');
+    const buffer = await this._decode(this._api.mixdown(this._jobId, []));
+    if (buffer === null) return; // superseded by a newer analysis
+    this._transport.setMix(buffer);
+    this._mixKey = '';
+    this._mixKind = 'mute';
+    this._setStatus(this._readyStatus());
+  }
+
+  /**
+   * In bounded mode a row's controls work whether or not its audio is here yet
+   * — fetching it is what pressing them does. Only a row whose fetch already
+   * failed is genuinely dead, and that is what `audioFailed` records.
+   */
+  isRowPlayable(row) {
+    return !row.audioFailed;
+  }
+
+  dispose() {
+    this._cache.clear();
+    this._mixKey = null;
+    this._mixKind = null;
+  }
+
+  /**
+   * Reconcile the audible mix with the user's intent.
+   *
+   * Reads only the two sets it is given, so a call that was queued behind a
+   * slow fetch still lands on the latest intent rather than a stale delta.
+   *
+   * @param {Set<number>} muted
+   * @param {Set<number>} soloed
+   */
+  async apply(muted, soloed) {
+    const failed = [];
+    let message = null;
+    let revertMutedTo = null;
+
+    // The only tracks that can make a sound: soloed, and not muted on top.
+    // A track that is both is silent either way, so it is never worth 106 MB.
+    const wanted = [...soloed].filter((id) => !muted.has(id));
+    const useIndividualTracks = wanted.length > 0 && wanted.length <= this._capacity;
+
+    /**
+     * Something is soloed, and every soloed track is also muted. Nothing may be
+     * audible at all — which is a case the mix cannot express, and cannot be
+     * left to the Transport to notice.
+     *
+     * WHY IT NEEDS SAYING HERE. transport.js silences a non-soloed track only
+     * when some *registered* track is soloed, and case (3) below evicts every
+     * individual buffer, so after soloing a whole pitch group the Transport
+     * holds nothing but the mix and sees no solo at all. Muting that group would
+     * then fall into case (1) and load `mixdown?exclude=<the group>` — the sum
+     * of every track the user did NOT solo — and play it. The user asked to hear
+     * seven tracks, muted them, and would hear the other twenty-three.
+     *
+     * Deciding it from the intent, where the solo is known whether or not its
+     * audio happens to be resident, closes that. It also saves a ~106 MB
+     * download of a buffer that could not have been heard either way.
+     */
+    const nothingAudible = wanted.length === 0 && soloed.size > 0;
+
+    /**
+     * Set when a *track* buffer joined mid-session. Only tracks need the
+     * restart below: Transport.setMix restores playback itself, because only it
+     * knows whether replacing the mix's source stopped the transport.
+     */
+    let addedTracks = false;
+    /** Set when the mix we are holding does not answer the question being asked. */
+    let mixUnusable = false;
+
+    if (useIndividualTracks) {
+      // --- case (2): hold the soloed tracks themselves ----------------------
+      for (const id of wanted) {
+        if (this._cache.has(id)) {
+          this._touch(id);
+          continue;
+        }
+        // Make room BEFORE fetching, not after the loop. Evicting afterwards
+        // means the outgoing set and the incoming set are decoded at the same
+        // time, so soloing four tracks and then four different ones peaks at
+        // 2 x capacity + 1 buffers — nine of them, ~1 GB at ten minutes, which
+        // is well past the budget that put this file in bounded mode in the
+        // first place, and the peak is what kills a tab rather than the
+        // average. Trimming to capacity - 1 first bounds the peak at
+        // capacity + 1, which is the number this mode promises.
+        //
+        // `wanted` is the keep set, so a track already fetched for this same
+        // solo is never thrown away to make room for its neighbour. That is
+        // safe: case (2) only runs when wanted.length <= capacity.
+        this._evict(new Set(wanted), Math.max(0, this._capacity - 1));
+        try {
+          if (await this._loadTrack(id)) addedTracks = true;
+        } catch (err) {
+          failed.push(id);
+          message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+        }
+      }
+      this._evict(new Set(wanted));
+    } else {
+      // --- cases (1) and (3): one buffer answers the whole question ---------
+      // (1) nothing soloed  -> everything except what is muted
+      // (3) too many soloed -> everything except what is NOT soloed
+      const wantMuteMix = wanted.length === 0;
+      const exclude = wantMuteMix
+        ? [...muted]
+        : this._allTrackIds().filter((id) => !wanted.includes(id));
+      const key = excludeKey(exclude);
+
+      // `nothingAudible` asks for no mix at all: whatever we are holding is
+      // about to be silenced below, so fetching a different one would spend a
+      // hundred megabytes to change which buffer is inaudible.
+      if (!nothingAudible && key !== this._mixKey) {
+        try {
+          await this._loadMix(exclude, key, wantMuteMix ? 'mute' : 'solo');
+        } catch (err) {
+          message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+          // The load failed, so we are still holding the previous mix. What to
+          // do with it depends entirely on what it is — and this is where the
+          // fallback has to terminate rather than retry, because a server that
+          // is down will fail the retry too.
+          if (!wantMuteMix) {
+            // A solo we cannot deliver. The mix we hold contains every track,
+            // so playing it would be the opposite of soloing. Silence it and
+            // put the solo buttons back.
+            failed.push(...wanted);
+            mixUnusable = true;
+          } else if (this._mixKind === 'mute') {
+            // A mute we cannot deliver, but the mix we hold IS a mute picture.
+            // Fall back to it: the buttons move to describe what is audible,
+            // which is both honest and stable — the next reconcile finds the
+            // key already correct and asks the server for nothing.
+            revertMutedTo = this._parseMixKey();
+          } else {
+            // We hold a solo mix and were asked for a mute mix. It cannot stand
+            // in for one, and its exclude list cannot be read as a mute picture
+            // either, so the only honest option is silence plus the banner.
+            mixUnusable = true;
+          }
+        }
+      }
+
+      // In case (3) the individual buffers are both unnecessary and the thing
+      // we are short of, so let all of them go — capacity 0. In case (1) they
+      // are harmless (silent, and capacity-limited) and worth keeping, because
+      // re-soloing something already decoded should cost nothing.
+      if (wanted.length > 0) this._evict(new Set(), 0);
+    }
+
+    // --- gains -------------------------------------------------------------
+    // The mix is muted whenever it must not be heard: whenever individual
+    // tracks are carrying the solo, whenever every soloed track is muted so
+    // nothing may sound, and whenever the mix we hold no longer answers the
+    // question being asked. Muting it is how a failed fetch stays honest — the
+    // user hears less than they asked for, never something they muted.
+    const silenceMix =
+      useIndividualTracks || nothingAudible || this._mixKey === null || mixUnusable;
+    const mutedForTransport = silenceMix ? [...muted, MIX_TRACK_ID] : [...muted];
+    this._transport.setMixState(mutedForTransport, soloed);
+
+    // --- make newly fetched tracks audible ---------------------------------
+    // A buffer registered mid-playback has no source and stays silent until the
+    // next play() (transport.js says so, and says why). Restarting every source
+    // from the current position is the sanctioned way to add a voice: one fresh
+    // shared timestamp for all of them, so nothing lands a sample out.
+    //
+    // Only for tracks. A mix swap has already restored itself inside setMix,
+    // and doing it twice would cost the user a second gap for nothing.
+    if (addedTracks && this._transport.isPlaying) {
+      this._transport.play(this._transport.currentTime);
+    }
+
+    if (this._isCurrent()) this._setStatus(this._readyStatus());
+    return { revertSolos: failed, revertMutedTo, message };
+  }
+
+  /** Move an id to the most-recently-used end of the cache. */
+  _touch(id) {
+    const buffer = this._cache.get(id);
+    this._cache.delete(id);
+    this._cache.set(id, buffer);
+  }
+
+  /**
+   * Fetch, decode and register one track for soloing.
+   * @param {number} id
+   * @returns {Promise<boolean>} whether a buffer actually reached the Transport
+   */
+  async _loadTrack(id) {
+    const row = this._rowFor(id);
+    this._setStatus(`Loading ${row ? row.label : `track ${id}`}…`);
+
+    const buffer = await this._decode(this._api.trackAudio(this._jobId, id));
+    if (buffer === null) return false; // superseded by a newer analysis
+
+    this._cache.set(id, buffer);
+    // soloOnly: this track's audio is already inside the mix, so it must be
+    // silent unless it is the thing being soloed. See transport.js.
+    this._transport.addTrack(id, buffer, { soloOnly: true });
+    if (row) row.setBuffer(buffer);
+    return true;
+  }
+
+  /**
+   * Fetch, decode and install a new mix.
+   *
+   * Nothing is mutated until the bytes are here and decoded. If this throws,
+   * `_mixKey` and `_mixKind` still describe the buffer the Transport is still
+   * holding — which is what lets the caller fall back to a state it can
+   * actually produce, instead of a state it will fail to fetch again.
+   *
+   * @param {Array<number>} exclude
+   * @param {string} key the stable form of `exclude`, already computed
+   * @param {'mute'|'solo'} kind what that exclude list means
+   */
+  async _loadMix(exclude, key, kind) {
+    this._setStatus(exclude.length > 0 ? 'Updating the mix…' : 'Loading the combined mix…');
+
+    const buffer = await this._decode(this._api.mixdown(this._jobId, exclude));
+    if (buffer === null) return; // superseded by a newer analysis
+
+    this._transport.setMix(buffer);
+    this._mixKey = key;
+    this._mixKind = kind;
+  }
+
+  /**
+   * The mute picture the currently held mix represents.
+   *
+   * Only meaningful when `_mixKind === 'mute'`; the one caller checks that
+   * first, because the same list of ids read off a solo mix would mean the
+   * exact opposite.
+   *
+   * @returns {Set<number>}
+   */
+  _parseMixKey() {
+    if (!this._mixKey) return new Set();
+    return new Set(this._mixKey.split(',').map(Number).filter(Number.isFinite));
+  }
+
+  /**
+   * Drop cached tracks until the cache is within capacity.
+   *
+   * `keep` is never evicted however old it is: those are the tracks currently
+   * making a sound, and freeing memory by silencing something the user is
+   * listening to is not a trade worth making. If a user solos more tracks than
+   * capacity we never get here — that is case (3), which holds none at all.
+   *
+   * @param {Set<number>} keep
+   * @param {number} [capacity] how many to keep. Defaults to the budgeted
+   *   number; case (3) passes 0, because there the individual buffers are the
+   *   very thing being traded away for one mix.
+   */
+  _evict(keep, capacity = this._capacity) {
+    for (const id of [...this._cache.keys()]) {
+      if (this._cache.size <= capacity) break;
+      if (keep.has(id)) continue;
+      this._cache.delete(id);
+      // Both holders have to let go. The Transport keeps the same AudioBuffer,
+      // so dropping only the cache entry would free nothing at all.
+      this._transport.removeTrack(id);
+      const row = this._rowFor(id);
+      if (row) row.clearBuffer();
+    }
+  }
+
+  /** The steady-state status line: what is loaded, and what it costs. */
+  _readyStatus() {
+    if (this._mixKey === null) return 'No mix loaded.';
+    const held = this._cache.size + 1;
+    const bytes = held * trackDecodedBytes(this._summary);
+    return this._cache.size === 0
+      ? `Full mix ready · ${formatMegabytes(bytes)} in memory`
+      : `Full mix plus ${this._cache.size} track${this._cache.size === 1 ? '' : 's'} · ` +
+          `${formatMegabytes(bytes)} in memory`;
   }
 }
 
@@ -930,6 +2102,7 @@ class App {
     this._newFileButton = document.getElementById('new-file');
     this._playheadEl = document.getElementById('playhead');
     this._audioStatus = document.getElementById('audio-status');
+    this._playbackNote = document.getElementById('playback-mode');
 
     // --- Session state ------------------------------------------------------
     /** AudioContext is created on first user gesture — browsers require it. */
@@ -940,6 +2113,31 @@ class App {
     this._summary = null;
     /** @type {Map<number, TrackRow>} */
     this._rows = new Map();
+    /** @type {Array<TrackGroupRow>} */
+    this._groups = [];
+    /** @type {?PlaybackStrategy} */
+    this._playback = null;
+
+    /**
+     * WHAT THE USER ASKED FOR, as opposed to what is currently audible.
+     *
+     * These two sets are the single source of truth for mute and solo. The
+     * Transport's gains and the rows' aria-pressed attributes are both
+     * *derived* from them, never a second copy — which is what lets a group
+     * toggle, a row toggle and "Clear solos" all be the same operation, and
+     * what lets a bounded-mode fetch that arrives late reconcile against the
+     * latest intent instead of replaying a stale delta.
+     *
+     * @type {Set<number>}
+     */
+    this._muted = new Set();
+    /** @type {Set<number>} */
+    this._soloed = new Set();
+
+    /** Serialises _applyMix so two fast clicks cannot interleave two fetches. */
+    this._applyRunning = false;
+    this._applyPending = false;
+
     this._audioReady = false;
     this._raf = null;
     this._resizeObserver = null;
@@ -1121,28 +2319,104 @@ class App {
   // ---------------------------------------------------------------------------
 
   /**
-   * Build one row per track, plus the diagnostics panel.
+   * Build the track list — grouped by pitch — plus the diagnostics panel.
+   *
+   * THE GROUPING RULE, in one place so it can be checked against the intent:
+   *
+   *   - Non-residual tracks that share a `pitch` and occur more than once
+   *     become one collapsible parent row.
+   *   - A pitch that occurs exactly once stays a plain row. A disclosure
+   *     triangle hiding a single row is ceremony, and on a short file every
+   *     pitch occurs once, so grouping there would add friction and no signal.
+   *   - Groups and plain rows are ordered together by energy, descending —
+   *     a group by the sum of its occurrences, which is how much of the
+   *     recording that note actually is.
+   *   - The residual keeps its own ungrouped row and is always last, whatever
+   *     its energy. It is the leftovers, not a competitor for the top of the
+   *     list.
+   *
    * @param {object} summary AnalysisSummary
    */
   renderWorkbench(summary) {
     this._rows.clear();
+    this._groups = [];
+    this._muted.clear();
+    this._soloed.clear();
     this._tracksEl.replaceChildren();
     this._tracksEl.style.setProperty('--playhead', '0%');
 
     const durationS = Number(summary.duration_s) || 0;
-    const rows = document.createDocumentFragment();
+    const tracks = summary.tracks || [];
 
-    for (const track of summary.tracks || []) {
+    // Build every row first. Grouping only decides where a row is *placed* —
+    // the rows themselves are identical either way, which is what keeps a
+    // grouped occurrence exactly as usable as an ungrouped one.
+    const makeRow = (track, inGroup) => {
       const row = new TrackRow(track, {
         durationS,
-        onMute: (id, muted) => this._setMuted(id, muted),
-        onSolo: (id, soloed) => this._setSoloed(id, soloed),
+        inGroup,
+        onMute: (id, muted) => this._setMuted([id], muted),
+        onSolo: (id, soloed) => this._setSoloed([id], soloed),
         exportUrlFor: (id, format) => this._exportTrack(id, format),
       });
       this._rows.set(row.trackId, row);
-      rows.appendChild(row.element);
+      return row;
+    };
+
+    // Bucket by pitch, preserving the server's order inside each bucket (it is
+    // already energy-descending, and time order within one note is not
+    // something the summary reports).
+    const buckets = new Map();
+    const residuals = [];
+    for (const track of tracks) {
+      if (track.kind === 'residual') {
+        residuals.push(track);
+        continue;
+      }
+      const pitch = typeof track.pitch === 'string' ? track.pitch : '';
+      // A non-residual track with no pitch should not happen — the server
+      // always labels one — but if it ever does, it gets a plain row rather
+      // than being silently swept into an "" group with unrelated tracks.
+      const key = pitch || `#ungrouped-${track.track_id}`;
+      if (!buckets.has(key)) buckets.set(key, { pitch, tracks: [] });
+      buckets.get(key).tracks.push(track);
     }
-    this._tracksEl.appendChild(rows);
+
+    /** @type {Array<{energy: number, build: Function}>} */
+    const entries = [];
+    for (const { pitch, tracks: members } of buckets.values()) {
+      if (members.length < 2) {
+        const track = members[0];
+        entries.push({
+          energy: Number(track.energy_ratio) || 0,
+          build: () => makeRow(track, false).element,
+        });
+        continue;
+      }
+      entries.push({
+        energy: members.reduce((total, t) => total + (Number(t.energy_ratio) || 0), 0),
+        build: () => {
+          const childRows = members.map((track) => makeRow(track, true));
+          const group = new TrackGroupRow(pitch, childRows, {
+            durationS,
+            onMute: (ids, muted) => this._setMuted(ids, muted),
+            onSolo: (ids, soloed) => this._setSoloed(ids, soloed),
+            // Children were hidden, so their canvases measured 0x0 and drew
+            // nothing. This is the first moment they have a size.
+            onToggle: () => this._drawAllRows(),
+          });
+          this._groups.push(group);
+          return group.element;
+        },
+      });
+    }
+
+    entries.sort((a, b) => b.energy - a.energy);
+
+    const fragment = document.createDocumentFragment();
+    for (const entry of entries) fragment.appendChild(entry.build());
+    for (const track of residuals) fragment.appendChild(makeRow(track, false).element);
+    this._tracksEl.appendChild(fragment);
 
     this._renderDiagnostics(summary);
     this._observeRows();
@@ -1150,6 +2424,7 @@ class App {
     // Nothing is playable until the PCM lands. Saying so on the buttons is the
     // difference between "loading" and "broken".
     this._setAudioReady(false);
+    this._refreshRowStates();
     this._updatePlayhead();
   }
 
@@ -1169,6 +2444,25 @@ class App {
     // normalised, because a bar that overflows its track would misreport the
     // split more badly than a rounding difference does.
     const total = partial + residual || 1;
+
+    /**
+     * One segment of the bar, sized through the CSSOM.
+     *
+     * NOT `attrs: { style: '…' }`. The server sends `style-src 'self'` with no
+     * `'unsafe-inline'` (backend/main.py), and that blocks inline style
+     * *attributes* as well as <style> blocks — so a width written as an
+     * attribute is dropped by the browser and both segments render at zero
+     * width, silently turning the honesty panel into an empty bar. Assigning
+     * through element.style is a scripted change rather than parsed markup, so
+     * CSP does not apply to it, which is why every other dynamic size in this
+     * module (the playhead) is written the same way.
+     */
+    const segment = (className, ratio) => {
+      const node = el('span', { className });
+      node.style.setProperty('width', `${(100 * ratio) / total}%`);
+      return node;
+    };
+
     const bar = el(
       'div',
       {
@@ -1180,16 +2474,7 @@ class App {
             `residual ${formatPercent(residual)}`,
         },
       },
-      [
-        el('span', {
-          className: 'seg seg-partial',
-          attrs: { style: `width:${(100 * partial) / total}%` },
-        }),
-        el('span', {
-          className: 'seg seg-residual',
-          attrs: { style: `width:${(100 * residual) / total}%` },
-        }),
-      ]
+      [segment('seg seg-partial', partial), segment('seg seg-residual', residual)]
     );
 
     const stat = (label, value, className) =>
@@ -1253,18 +2538,18 @@ class App {
   // ---------------------------------------------------------------------------
 
   /**
-   * Fetch, decode, and register every track's PCM.
+   * Get this analysis's audio into the Transport, by whichever strategy fits.
    *
-   * All of it, before the first play — see the module header. Progress is
-   * reported as a count rather than a spinner because a spinner cannot tell you
-   * whether 3 of 200 tracks have arrived or 199.
+   * The choice is made here, once, from an estimate of what eager loading would
+   * cost: duration x sample rate x 4 bytes x track count. Over the budget and
+   * the bounded strategy takes over; under it, nothing about the original path
+   * changes. See the module header for what each strategy does.
    *
    * @param {object} summary
    */
   async _loadAllAudio(summary) {
-    const tracks = (summary.tracks || []).slice();
     const jobId = summary.job_id || this._jobId;
-    const total = tracks.length;
+    const total = (summary.tracks || []).length;
 
     if (total === 0) {
       this._setAudioStatus('No tracks to play.');
@@ -1288,92 +2573,71 @@ class App {
     // many a page may create, and the earlier context is still perfectly good.)
     this._transport = new Transport(ctx);
 
-    // Counted, not inferred. `loaded` is incremented where a buffer actually
-    // reaches the Transport, because that is the only event that makes a track
-    // audible — deriving it as `total - failures.length` would count every
-    // track we never got around to asking for as a success.
-    let loaded = 0;
-    const failures = [];
-    this._setAudioStatus(`Loading audio — 0 of ${total}`);
-
-    /**
-     * Record a track the user will not hear, and say so on its row.
-     *
-     * Every path that gives up on a track goes through here, so the count in
-     * the summary below and the marks on the rows can never disagree.
-     */
-    const recordFailure = (track) => {
-      failures.push(track.label || `Track ${track.track_id}`);
-      const failedRow = this._rows.get(track.track_id);
-      if (failedRow) failedRow.setAudioFailed();
+    const estimate = estimateDecodedBytes(summary);
+    const bounded = estimate > PLAYBACK_MEMORY_BUDGET_BYTES;
+    const deps = {
+      api: this._api,
+      jobId,
+      ctx,
+      transport: this._transport,
+      summary,
+      rowFor: (id) => this._rows.get(id) || null,
+      // Guarded once, here, so no strategy can write a status line belonging to
+      // an analysis the user has already replaced.
+      setStatus: (text) => {
+        if (this._summary === summary) this._setAudioStatus(text);
+      },
+      isCurrent: () => this._summary === summary,
     };
+    this._playback = bounded ? new BoundedPlayback(deps) : new EagerPlayback(deps);
 
-    // A fixed pool of workers pulling from one queue: simpler than batching,
-    // and it keeps exactly AUDIO_FETCH_CONCURRENCY requests in flight even when
-    // one track is much larger than the others.
-    const worker = async () => {
-      while (tracks.length > 0) {
-        const track = tracks.shift();
-        const row = this._rows.get(track.track_id);
-        try {
-          const bytes = await this._api.trackAudio(jobId, track.track_id);
-          const buffer = await decodeAudio(ctx, bytes);
-          // Guard against a session that was reset (new upload, or an error)
-          // while this fetch was in flight — registering into a dead transport
-          // would resurrect the old analysis's audio under the new one's rows.
-          if (this._summary !== summary) return;
-          this._transport.addTrack(track.track_id, buffer);
-          if (row) row.setBuffer(buffer);
-          loaded += 1;
-        } catch (err) {
-          recordFailure(track);
-          if (err instanceof ApiError && err.status === 404) {
-            // The session expired mid-load. Nothing else will succeed either,
-            // so stop asking — but a track abandoned here is still a track the
-            // user will not hear, and it has to be counted and marked as one.
-            // Draining the queue silently would leave the summary below
-            // reporting only the handful that happened to be in flight, which
-            // is how "1 of 200 tracks loaded" gets announced as "3 failed".
-            // splice() is atomic against the other workers: there is no await
-            // between it and the loop, so no worker can pick up a track that
-            // is about to be recorded as abandoned.
-            for (const abandoned of tracks.splice(0)) recordFailure(abandoned);
-          }
-        } finally {
-          if (this._summary === summary) {
-            this._setAudioStatus(`Loading audio — ${loaded + failures.length} of ${total}`);
-          }
-        }
-      }
-    };
-
-    const pool = Math.max(1, Math.min(AUDIO_FETCH_CONCURRENCY, total));
-    await Promise.all(Array.from({ length: pool }, worker));
-
-    if (this._summary !== summary) return; // superseded by a newer analysis
-
-    if (loaded === 0) {
-      this._setAudioStatus('No track audio could be loaded.');
-      this._setAudioReady(false);
-      this._showError(
-        'The analysis finished but none of its audio could be loaded. ' +
-          'The session may have expired — please try the file again.'
+    // Say which mode is running before the loading starts, not after. A user
+    // watching a long file load deserves to know why it is behaving this way
+    // while it is happening.
+    this._setPlaybackNote(this._playback.note);
+    if (bounded) {
+      this._announce(
+        `${total} tracks. This file is long — about ${formatMegabytes(estimate)} of audio if it ` +
+          'were all loaded — so tracks load on demand. ' + BOUNDED_MODE_NOTE
       );
-      return;
     }
 
-    this._setAudioReady(true);
-    if (failures.length > 0) {
-      // Say it plainly. Silently playing 198 of 200 tracks would break the one
-      // claim this product makes about its own mix.
-      const message =
-        `${failures.length} of ${total} tracks could not be loaded and will be silent. ` +
-        'The mix will not reproduce the original exactly.';
-      this._setAudioStatus(message);
-      this._announce(message);
-    } else {
-      this._setAudioStatus(`${total} track${total === 1 ? '' : 's'} ready.`);
-      this._announce('All track audio loaded. Ready to play.');
+    try {
+      await this._playback.prepare();
+      if (this._summary !== summary) return; // superseded by a newer analysis
+
+      this._setAudioReady(true);
+      // The Transport starts with no mute or solo picture at all, so push the
+      // (empty) intent through the same path every later change uses. One code
+      // path from the first frame means there is no separate "initial state"
+      // to get wrong.
+      await this._applyMix();
+      if (this._summary !== summary) return;
+
+      // A partial failure outranks "ready": the user is about to hear something
+      // that is not the file they uploaded, and that is the sentence that has
+      // to reach them.
+      const warning = this._playback.loadWarning;
+      this._announce(
+        warning ||
+          (bounded ? 'The combined mix is ready to play.' : 'All track audio loaded. Ready to play.')
+      );
+    } catch (err) {
+      if (this._summary !== summary) return;
+      const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+      this._setAudioReady(false);
+      if (bounded) {
+        // Keep the workbench. Unlike the eager path, one failed request has not
+        // cost the user their analysis — every trajectory is still drawn and
+        // every track is still exportable — so this reports without tearing the
+        // session down.
+        this._setAudioStatus('Playback unavailable. Exports still work.');
+        this._setBanner(`The mix could not be loaded: ${message}`);
+        this._announce(`Playback unavailable. ${message}`);
+      } else {
+        this._setAudioStatus('No track audio could be loaded.');
+        this._showError(message);
+      }
     }
   }
 
@@ -1447,27 +2711,153 @@ class App {
     }
   }
 
-  _setMuted(trackId, muted) {
+  /**
+   * Mute or unmute one track or a whole pitch group.
+   *
+   * Takes a list because a group toggle is the same operation on several ids,
+   * and doing it as one intent change means one reconcile and — in bounded
+   * mode — one mixdown request instead of one per member.
+   *
+   * @param {Iterable<number>} trackIds
+   * @param {boolean} muted
+   */
+  _setMuted(trackIds, muted) {
     if (!this._transport) return;
-    this._transport.setMuted(trackId, muted);
-    const row = this._rows.get(trackId);
-    if (row) row.setMuted(muted);
+    this._updateIntent(this._muted, trackIds, muted);
   }
 
-  _setSoloed(trackId, soloed) {
+  /**
+   * Solo or unsolo one track or a whole pitch group.
+   * @param {Iterable<number>} trackIds
+   * @param {boolean} soloed
+   */
+  _setSoloed(trackIds, soloed) {
     if (!this._transport) return;
-    this._transport.setSoloed(trackId, soloed);
-    const row = this._rows.get(trackId);
-    if (row) row.setSoloed(soloed);
+    this._updateIntent(this._soloed, trackIds, soloed);
+  }
+
+  /**
+   * Add or remove ids from one intent set, then reflect and reconcile.
+   *
+   * Every control ends up here, which is why the buttons cannot drift from the
+   * audio: the set changes, the rows are redrawn *from* the set, and the
+   * strategy is asked to make the sound match the same set.
+   *
+   * @param {Set<number>} set
+   * @param {Iterable<number>} trackIds
+   * @param {boolean} on
+   */
+  _updateIntent(set, trackIds, on) {
+    for (const id of trackIds) {
+      if (on) {
+        set.add(id);
+      } else {
+        set.delete(id);
+      }
+    }
+    this._refreshRowStates();
+    this._applyMix();
   }
 
   _clearSolos() {
     if (!this._transport) return;
-    for (const row of this._rows.values()) {
-      this._transport.setSoloed(row.trackId, false);
-      row.setSoloed(false);
-    }
+    this._soloed.clear();
+    this._refreshRowStates();
+    this._applyMix();
     this._announce('Solos cleared.');
+  }
+
+  /**
+   * Push the current intent onto every row and group.
+   *
+   * The buttons are a *reflection* of `_muted` and `_soloed`, never a second
+   * copy of them. That is what makes "Clear solos" and a group toggle correct
+   * without either knowing about the other.
+   */
+  _refreshRowStates() {
+    for (const [id, row] of this._rows) {
+      row.setMuted(this._muted.has(id));
+      row.setSoloed(this._soloed.has(id));
+    }
+    for (const group of this._groups) group.refresh(this._muted, this._soloed);
+  }
+
+  /**
+   * Make the audible mix match the intent, one reconcile at a time.
+   *
+   * SERIALISED, AND COALESCED. In bounded mode a reconcile can involve a
+   * hundred-megabyte download, and a user clicking three rows quickly would
+   * otherwise start three overlapping fetches whose completion order decides
+   * what they hear. So one runs at a time, and anything that arrives during it
+   * sets a flag rather than queueing: the next pass reads the intent sets
+   * afresh, so it lands on the latest state and the intermediate ones are
+   * simply skipped. Fewer requests AND a more correct answer.
+   */
+  async _applyMix() {
+    if (!this._playback || !this._transport) return;
+    if (this._applyRunning) {
+      this._applyPending = true;
+      return;
+    }
+
+    this._applyRunning = true;
+    const summary = this._summary;
+    try {
+      // The cap bounds only the passes this loop asks for ITSELF (a revert
+      // wanting to settle). Passes asked for by the user — a second click
+      // arriving while the first is still fetching — are never dropped, because
+      // they are bounded by the person clicking and dropping one would leave the
+      // controls describing a mix nobody is hearing. Belt and braces on the
+      // self-induced kind: a reconcile that can re-enter itself can spin the
+      // network forever if a later edit gets the progress argument subtly
+      // wrong, and a tab hammering the server is much worse than a stale button.
+      let passes = 0;
+      do {
+        this._applyPending = false;
+        let wantsAnotherPass = false;
+        const result = await this._playback.apply(this._muted, this._soloed);
+        if (this._summary !== summary) return; // superseded by a newer analysis
+
+        // The strategy could not deliver part of what was asked for. Put those
+        // controls back so the buttons describe what is actually audible, then
+        // reconcile once more against the corrected intent.
+        //
+        // Only re-run if the revert CHANGED something. That is what guarantees
+        // termination: a revert either moves the intent (so the next pass is
+        // asking a different question) or it does not (so asking again would
+        // fail identically). A server that is down therefore costs one request
+        // per click, not an infinite retry loop.
+        const revertSolos = (result && result.revertSolos) || [];
+        const revertMutedTo = result && result.revertMutedTo;
+        const soloChanged = revertSolos.some((id) => this._soloed.has(id));
+        const muteChanged = Boolean(revertMutedTo) && !sameSet(revertMutedTo, this._muted);
+        if (soloChanged || muteChanged) {
+          for (const id of revertSolos) this._soloed.delete(id);
+          if (revertMutedTo) this._muted = new Set(revertMutedTo);
+          this._refreshRowStates();
+          wantsAnotherPass = true;
+        }
+        if (result && result.message) {
+          // _setBanner, not _showError: the workbench is intact and still
+          // playable, and tearing it down would cost far more than the failed
+          // request did. But it does reach the banner — nothing here fails only
+          // into the console.
+          this._setBanner(`Could not update playback: ${result.message}`);
+          this._announce(`Could not update playback. ${result.message}`);
+        }
+        passes += 1;
+        if (wantsAnotherPass && passes < APPLY_MAX_PASSES) this._applyPending = true;
+      } while (this._applyPending);
+    } catch (err) {
+      // A strategy is not supposed to reject — it reports instead — so this is
+      // the belt to that braces. Reaching the banner matters more than which
+      // path got here.
+      const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+      this._setBanner(`Could not update playback: ${message}`);
+      this._announce(`Could not update playback. ${message}`);
+    } finally {
+      this._applyRunning = false;
+    }
   }
 
   /**
@@ -1485,12 +2875,39 @@ class App {
     for (const button of controls) {
       if (button) button.disabled = !this._audioReady;
     }
-    // Per row, not globally: when some tracks failed to load, the rest of the
-    // workbench is still playable, but a failed row's mute and solo are no-ops
-    // on the Transport (it has never seen that id). Enabling them anyway is the
-    // "looks live and does nothing" case setPlayable exists to prevent.
-    for (const row of this._rows.values()) row.setPlayable(this._audioReady && row.hasAudio);
+    // Per row, not globally, and the *strategy* decides what "playable" means.
+    // In eager mode a row needs a decoded buffer, because without one its mute
+    // and solo are no-ops on a Transport that has never seen that id — the
+    // "looks live and does nothing" case setPlayable exists to prevent. In
+    // bounded mode the row has no buffer by design and pressing the button is
+    // what fetches it, so the same test would disable the entire workbench.
+    for (const row of this._rows.values()) {
+      row.setPlayable(this._audioReady && this._rowIsPlayable(row));
+    }
+    // A group is usable while any one of its occurrences is.
+    for (const group of this._groups) {
+      const usable = group.trackIds.some((id) => {
+        const row = this._rows.get(id);
+        return Boolean(row) && this._rowIsPlayable(row);
+      });
+      group.setPlayable(this._audioReady && usable);
+    }
     if (this._workbench) this._workbench.dataset.audio = this._audioReady ? 'ready' : 'loading';
+  }
+
+  /** @param {TrackRow} row @returns {boolean} */
+  _rowIsPlayable(row) {
+    return this._playback ? this._playback.isRowPlayable(row) : row.hasAudio;
+  }
+
+  /**
+   * Show or hide the one line that admits bounded mode is running.
+   * @param {string} note empty to hide it
+   */
+  _setPlaybackNote(note) {
+    if (!this._playbackNote) return;
+    this._playbackNote.textContent = note || '';
+    this._playbackNote.hidden = !note;
   }
 
   /** @param {boolean} playing */
@@ -1724,20 +3141,35 @@ class App {
       this._transport.dispose();
       this._transport = null;
     }
+    if (this._playback) {
+      // The strategy's own cache holds decoded AudioBuffers — the megabytes
+      // this whole mode exists to bound — so dropping the reference is not
+      // enough while an in-flight fetch could still be holding the object.
+      this._playback.dispose();
+      this._playback = null;
+    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
 
     this._jobId = null;
+    // Cleared BEFORE the rows: every in-flight fetch checks `_summary` against
+    // the one it started with, so nulling it here is what makes them all
+    // stand down rather than register audio into the next analysis.
     this._summary = null;
     this._rows.clear();
+    this._groups = [];
+    this._muted.clear();
+    this._soloed.clear();
+    this._applyPending = false;
     this._audioReady = false;
     this._busy = false;
 
     if (this._tracksEl) this._tracksEl.replaceChildren();
     if (this._diagnostics) this._diagnostics.replaceChildren();
     this._setAudioStatus('');
+    this._setPlaybackNote('');
     this._setPlayingUi(false);
     this._setProgress(0, 'Analysing…');
     if (this._playheadEl) this._playheadEl.textContent = '0.00 s / 0.00 s';
@@ -1748,8 +3180,17 @@ class App {
   // Redrawing
   // ---------------------------------------------------------------------------
 
+  /**
+   * Redraw every canvas on screen.
+   *
+   * Groups as well as rows: a group's canvas is its own overlay of its
+   * children's trajectories, so it needs the same resize and expand treatment.
+   * A collapsed group's children measure 0x0 and bail out by themselves, which
+   * is why this can safely be called for everything every time.
+   */
   _drawAllRows() {
     for (const row of this._rows.values()) row.draw();
+    for (const group of this._groups) group.draw();
   }
 
   /**
@@ -1841,4 +3282,24 @@ function renderWorkbench(summary) {
   return app.renderWorkbench(summary);
 }
 
-export { analyze, loadTracks, renderWorkbench, Transport, App, ApiClient, ApiError, JobFeed, TrackRow };
+export {
+  analyze,
+  loadTracks,
+  renderWorkbench,
+  Transport,
+  App,
+  ApiClient,
+  ApiError,
+  JobFeed,
+  TrackRow,
+  // Added in Phase 6. The scaffold's contract above is unchanged; these are
+  // exported so the grouping rule and the two playback strategies can be
+  // exercised on their own rather than only through a whole session.
+  TrackGroupRow,
+  PlaybackStrategy,
+  EagerPlayback,
+  BoundedPlayback,
+  estimateDecodedBytes,
+  excludeKey,
+  PLAYBACK_MEMORY_BUDGET_BYTES,
+};
