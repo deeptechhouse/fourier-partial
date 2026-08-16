@@ -1,0 +1,75 @@
+[project]
+name = "fourier-partial"
+version = "0.1.0"
+description = "Decompose audio into individually-audible pitched tracks via sinusoidal partial tracking."
+requires-python = "==3.13.12"
+license = { text = "MIT" }
+
+# -----------------------------------------------------------------------------
+# Black — formatter
+# -----------------------------------------------------------------------------
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+# -----------------------------------------------------------------------------
+# Ruff — linter
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # bugbear (likely bugs)
+    "S",   # bandit (security)
+    "ANN", # missing type annotations
+    "D",   # docstrings
+]
+ignore = [
+    "D203",  # conflicts with D211
+    "D213",  # conflicts with D212
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may use asserts (S101) and need no docstring on every case.
+"tests/*" = ["S101", "D100", "D103", "ANN201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# -----------------------------------------------------------------------------
+# mypy — static type checking
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+disallow_any_generics = true
+# Third-party DSP libs ship incomplete stubs; don't fail the build on them.
+[[tool.mypy.overrides]]
+module = ["librosa.*", "soundfile.*", "mido.*", "scipy.*"]
+ignore_missing_imports = true
+
+# -----------------------------------------------------------------------------
+# pytest + coverage
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=backend --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
+
+[tool.coverage.run]
+branch = true
+# Every phase has landed, so nothing is omitted any more and the 90% gate in
+# `addopts` measures the whole backend. Currently at 91%.
+#
+# Do not reintroduce an omit list to make a failing gate pass. The point of the
+# threshold is to notice untested code; hiding the code from the measurement
+# defeats it and leaves a number that looks healthy while meaning nothing.
+omit = ["*/__init__.py"]

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fourier_partial — README</title>
+<style>
+:root{
+  --ground:#08080b; --panel:#101016; --raised:#191921; --rule:#24242e;
+  --ink:#e8e4d9; --ink-dim:#a8a49a; --ink-faint:#6e6b64;
+  --spec-0:#7d5fe8; --spec-2:#35b5d8; --spec-3:#3fc9a8; --spec-5:#e8a33d;
+  --accent:#35b5d8; --warn:#e8a33d; --danger:#e06a5a;
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;
+  --body:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --ground:#f7f4ec; --panel:#fffdf7; --raised:#efebe0; --rule:#ddd7c8;
+    --ink:#14141a; --ink-dim:#4e4c48; --ink-faint:#7d7a72;
+    --spec-0:#5b39c4; --spec-2:#1a7f9c; --spec-3:#1f8f74; --spec-5:#b0731a;
+    --accent:#1a7f9c; --warn:#a5690f; --danger:#b2402f;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
+  font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.rule{height:2px;border:0;margin:0;background:linear-gradient(90deg,
+  var(--spec-0),#4a7fe0,var(--spec-2),var(--spec-3),#a8cf5c,var(--spec-5))}
+.wrap{max-width:820px;margin:0 auto;padding:56px 28px 100px}
+h1{font-family:var(--mono);font-size:34px;font-weight:500;letter-spacing:-.02em;margin:0 0 14px}
+h1 .u{color:var(--ink-faint)}
+.stand{font-size:19px;color:var(--ink-dim);margin:0 0 32px;max-width:62ch}
+h2{font-family:var(--mono);font-size:19px;font-weight:500;margin:48px 0 10px;
+  padding-top:16px;border-top:1px solid var(--rule)}
+h3{font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.02em;margin:26px 0 8px}
+p,ul,ol{max-width:68ch}p{margin:0 0 16px}li{margin-bottom:6px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.85em;background:var(--panel);padding:1px 5px;border-radius:2px}
+pre{background:var(--panel);border:1px solid var(--rule);border-radius:3px;padding:16px 18px;
+  overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;margin:0 0 20px}
+pre code{background:none;padding:0}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 30px}
+.badge{font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:4px 10px;
+  border-radius:2px;background:var(--raised);border:1px solid var(--rule);color:var(--ink-dim)}
+.badge.ok{color:var(--spec-3);border-color:var(--spec-3)}
+.tw{overflow-x:auto;margin:0 0 20px}
+table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:13.5px}
+th{text-align:left;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-faint);font-weight:500;padding:0 14px 8px 0;border-bottom:1px solid var(--rule)}
+td{padding:8px 14px 8px 0;border-bottom:1px solid var(--rule);color:var(--ink-dim);vertical-align:top}
+td:first-child{color:var(--ink);white-space:nowrap}
+.callout{border-left:2px solid var(--accent);background:var(--panel);padding:16px 20px;
+  margin:0 0 20px;max-width:68ch;border-radius:0 3px 3px 0}
+.callout.warn{border-left-color:var(--warn)}
+.callout p:last-child{margin-bottom:0}
+.callout .lab{font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-faint);margin:0 0 8px}
+.inv{font-family:var(--mono);font-size:15px;text-align:center;padding:20px;background:var(--panel);
+  border:1px solid var(--rule);border-radius:3px;margin:0 0 20px;max-width:68ch;overflow-x:auto}
+.inv .em{color:var(--accent)}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:12px;color:var(--ink-faint)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<hr class="rule">
+<div class="wrap">
+
+<h1>fourier<span class="u">_</span>partial</h1>
+<p class="stand">
+  Drop in a few seconds of audio. Get back the individual tones it is actually
+  made of — each one visible, each one soloable, each one exportable as audio or
+  as notes. Play them all together and you get your recording back, sample for
+  sample.
+</p>
+
+<div class="badges">
+  <span class="badge ok">56 tests passing</span>
+  <span class="badge ok">reconstruction exact</span>
+  <span class="badge">Python 3.13.12</span>
+  <span class="badge">MIT</span>
+  <span class="badge">macOS · Intel &amp; Apple Silicon</span>
+</div>
+
+<h2>Quick start</h2>
+
+<h3>1. Set up the environment (once)</h3>
+<pre><code>cd /Users/aaandy/_andy_ai_projects_2026/fourier_partial
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt</code></pre>
+
+<h3>2. Run it</h3>
+<p>Double-click <strong>FourierPartial.app</strong> in Finder. It starts the server, waits
+until it answers, and opens your browser.</p>
+
+<p>Or from a terminal, which is better when something goes wrong because you can
+see the errors:</p>
+<pre><code>./run.sh              <span style="color:var(--ink-faint)"># starts the server and opens a browser</span>
+./run.sh --no-open    <span style="color:var(--ink-faint)"># server only</span></code></pre>
+
+<h3>3. Use it</h3>
+<ol>
+  <li>Drop in a WAV, FLAC, AIFF or OGG file — up to 30 seconds.</li>
+  <li>Wait a moment while it analyses.</li>
+  <li>You get a stack of tracks. Each row has <strong>M</strong> (mute) and <strong>S</strong> (solo),
+      a note name, and a picture of that tone's pitch over time.</li>
+  <li>Press <strong>Play</strong>. Solo one track to hear a single pure tone with the
+      original's vibrato and decay intact.</li>
+  <li>Unmute everything — that is your original file, exactly.</li>
+  <li><strong>wav</strong> / <strong>mid</strong> on any row exports it.</li>
+</ol>
+
+<div class="callout">
+  <p class="lab">If the app does nothing when double-clicked</p>
+  <p>
+    It should always show a dialog rather than fail silently. If it does not,
+    run <code>./run.sh</code> in a terminal — the error will be on screen. The
+    server log is at <code>logs/server.log</code>.
+  </p>
+</div>
+
+<h2>What it actually does</h2>
+
+<p>
+  A Fourier transform tells you which frequencies a sound contains. Doing that
+  in short overlapping windows tells you which frequencies are present
+  <em>when</em>. Link those across time and each becomes a <strong>partial</strong>: one tone's
+  entire life, sliding and swelling and fading.
+</p>
+<p>
+  Group the partials that belong to one note, render each group back to audio,
+  and you have tracks. Then comes the one decision everything else rests on —
+  the leftovers are defined as a plain subtraction:
+</p>
+
+<div class="inv">residual &nbsp;:=&nbsp; original &nbsp;&minus;&nbsp; &Sigma; partials</div>
+
+<p>which means, rearranged:</p>
+
+<div class="inv">&Sigma; all tracks &nbsp;<span class="em">&equiv;</span>&nbsp; original</div>
+
+<p>
+  Not approximately. Identically — and <em>regardless of how well the analysis
+  performed</em>. Every partial could be mistracked and the mix would still
+  reproduce your upload sample for sample. That is asserted on every analysis
+  and measured at <strong>2.98e-08</strong> (float32 rounding) end to end over HTTP.
+</p>
+
+<h2>What lands where</h2>
+<div class="tw">
+<table>
+  <thead><tr><th>Material</th><th>Where it goes</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Sustained tones</td><td>Pitched tracks</td><td>Sparse in frequency, so few partials describe them</td></tr>
+    <tr><td>Harmonics</td><td>Grouped with their fundamental</td><td>You want to solo the note, not its 3rd harmonic</td></tr>
+    <tr><td>Clicks, breath, noise</td><td>The residual</td><td>Cannot be sparse in frequency — see below</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  <p class="lab">The residual is not an error bucket</p>
+  <p>
+    A signal cannot be concentrated in both time and frequency at once. A click
+    is maximally concentrated in time, so its energy <em>must</em> spread across all
+    frequencies, and no finite set of tones can represent it. The residual is
+    where the mathematics says that material has to go — so it is a first-class
+    track with its own character (the pick, the bow, the breath), not a failure.
+  </p>
+</div>
+
+<h2>Formats</h2>
+<div class="tw">
+<table>
+  <thead><tr><th>Direction</th><th>Formats</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Import</td><td>WAV, FLAC, AIFF, OGG</td><td>MP3 depends on the libsndfile build; convert to WAV if refused</td></tr>
+    <tr><td>Export audio</td><td>WAV (24-bit)</td><td>Lossless — literally the samples you soloed</td></tr>
+    <tr><td>Export notes</td><td>MIDI</td><td>Lossy. One file per track; see below</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <p class="lab">About MIDI export</p>
+  <p>
+    A partial is a continuous curve; MIDI is discrete events on a 12-tone grid,
+    so converting loses information. Pitch becomes a note plus a pitch bend (range
+    widened to &plusmn;48 semitones via RPN 0, without which glides silently clip),
+    and amplitude becomes velocity plus CC 11.
+  </p>
+  <p>
+    Export is <strong>one file per track</strong> because pitch bend applies to a whole MIDI
+    channel — tracks sharing one would bend each other. The residual has no MIDI
+    export at all: it is broadband noise, and writing it as notes would be
+    inventing information rather than converting it.
+  </p>
+</div>
+
+<h2>Architecture</h2>
+<pre><code>frontend/          canvas trajectories + sample-accurate Web Audio playback
+   |  HTTP + WebSocket
+backend/api/       routes, background jobs, progress socket
+backend/analysis/  stft -> peaks -> tracking -> grouping
+backend/synthesis/ oscillator bank; owns the reconstruction invariant
+backend/export/    wav (lossless) + mid (lossy)
+backend/core/      types, ports, errors — depends on nothing</code></pre>
+<p>
+  Ports and adapters throughout: every replaceable concern sits behind a
+  <code>Protocol</code> in <code>backend/core/interfaces.py</code>, so swapping the tracker, the
+  renderer or the audio backend means writing one class and changing one line in
+  <code>backend/services.py</code>.
+</p>
+<p>
+  Full detail in <a href="TDD_fourier_partial.html">the technical design document</a>,
+  which includes six live in-browser demonstrations of the Fourier machinery.
+  Layout map in <code>NAVIGATION.md</code>.
+</p>
+
+<h2>Development</h2>
+<pre><code>.venv/bin/python -m pytest tests/ -q -o addopts=""   <span style="color:var(--ink-faint)"># 56 tests</span>
+.venv/bin/python -m pytest tests/test_reconstruction.py  <span style="color:var(--ink-faint)"># the invariant</span>
+.venv/bin/python -m pytest tests/test_windowing.py       <span style="color:var(--ink-faint)"># two nasty regressions</span></code></pre>
+<p>
+  Every tunable lives in <code>AnalysisParams</code> (<code>backend/core/types.py</code>) and every
+  adjustable constant elsewhere is marked with the word <code>ADJUSTABLE</code> and an
+  explanation of which way to turn it.
+</p>
+
+<div class="callout warn">
+  <p class="lab">Known gap</p>
+  <p>
+    <code>pyproject.toml</code> still excludes the now-implemented modules from the 90%
+    coverage gate — a scaffolding measure that has outlived its purpose. Those
+    <code>omit</code> lines should be removed one at a time, adding tests until each module
+    passes on its own. The gate cannot tighten while they are listed.
+  </p>
+</div>
+
+<h2>Licence</h2>
+<p>
+  MIT. Every dependency is permissively licensed (BSD / ISC / MIT / Apache-2.0),
+  which the open-source goal requires — see <code>requirements.txt</code>, where each pin
+  carries its licence.
+</p>
+
+<footer>
+  fourier_partial 0.1.0 · MIT · framing after Quanta Magazine on the Fourier
+  transform and the fractal uncertainty principle
+</footer>
+
+</div>
+</body>
+</html>

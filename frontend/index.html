@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fourier_partial</title>
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<header class="app-bar">
+  <h1>fourier<span class="dim">_</span>partial</h1>
+  <p class="tagline">Hear a sound as the tones it is made of.</p>
+</header>
+
+<main>
+  <!-- Failures land here, never in the console. role="alert" so it is announced
+       the moment it appears rather than when focus happens to reach it. -->
+  <div id="error" class="banner banner-error" role="alert" hidden></div>
+
+  <!-- Milestone announcements for screen readers. Visually hidden on purpose:
+       everything said here is already on screen somewhere, just not in a place
+       that would be announced when it changes. -->
+  <p id="announcer" class="sr-only" role="status" aria-live="polite"></p>
+
+  <!-- Stage 1: drop target. Replaced by the workbench once analysis completes. -->
+  <section id="dropzone" class="dropzone" aria-label="Upload audio">
+    <p>Drop an audio file here, or <button type="button" id="browse">choose a file</button></p>
+    <p class="hint">WAV, FLAC, AIFF, or MP3 &middot; up to 10 minutes</p>
+    <p class="hint">Longer files take longer to analyse and are analysed in less detail &mdash; a
+      phrase of a few seconds gives the sharpest results.</p>
+    <input type="file" id="file-input" accept="audio/*" hidden>
+  </section>
+
+  <!-- Stage 2: progress. Fed by the WebSocket job feed. -->
+  <section id="progress" class="progress" hidden aria-live="polite">
+    <div class="bar" id="progress-bar" role="progressbar"
+         aria-label="Analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div class="fill" id="progress-fill"></div>
+    </div>
+    <p id="progress-stage">Analysing&hellip;</p>
+  </section>
+
+  <!-- Stage 3: the workbench. -->
+  <section id="workbench" hidden data-audio="loading">
+    <div class="transport" role="group" aria-label="Transport">
+      <button type="button" id="play" aria-label="Play" disabled>Play</button>
+      <button type="button" id="stop" aria-label="Stop" disabled>Stop</button>
+      <button type="button" id="solo-none" disabled>Clear solos</button>
+      <button type="button" id="view-toggle" aria-pressed="false" disabled>Amplitude view</button>
+      <button type="button" id="new-file" class="ghost">New file</button>
+      <span id="audio-status" class="audio-status"></span>
+      <span id="playhead" class="playhead-time">0.00 s / 0.00 s</span>
+    </div>
+
+    <!-- Column headings. aria-hidden because every control below already
+         carries a full accessible name; announcing these too would double up. -->
+    <div class="tracks-head" aria-hidden="true">
+      <span>mix</span>
+      <span>track</span>
+      <span>frequency over time</span>
+      <span>export</span>
+    </div>
+
+    <!-- One row per track: mute/solo, label, waveform canvas, export buttons. -->
+    <div id="tracks" class="tracks" role="list"></div>
+
+    <!-- The canvases have no axis labels of their own, so the axis is stated
+         once, here, in words. An unlabelled log axis is not a chart. -->
+    <p class="tracks-legend">
+      <span class="ramp" aria-hidden="true"></span>
+      Vertical axis: frequency, 20&nbsp;Hz at the bottom to 20&nbsp;kHz at the top, logarithmic.
+      Line brightness follows amplitude; colour follows register. The residual is neutral grey
+      because broadband noise has no single frequency.
+    </p>
+
+    <!-- Numeric honesty: show the user how the decomposition actually went. -->
+    <aside id="diagnostics" class="diagnostics" aria-label="Analysis diagnostics"></aside>
+  </section>
+</main>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

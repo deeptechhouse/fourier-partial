@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>FourierPartial</string>
+	<key>CFBundleDisplayName</key>
+	<string>FourierPartial</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.andy.fourierpartial</string>
+	<key>CFBundleExecutable</key>
+	<string>FourierPartial</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!-- The launcher script only shells out; it never draws its own window.
+	     LSUIElement is deliberately absent so the app keeps a Dock icon,
+	     which is how the user quits it and shuts the server down. -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>fourier_partial</string>
+</dict>
+</plist>

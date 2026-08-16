@@ -1,0 +1,13 @@
+Run this from anywhere to begin Phase 1:
+
+cd /Users/aaandy/_andy_ai_projects_2026/fourier_partial && claude "Implement Phase 1 of fourier_partial: backend/analysis/stft.py, backend/analysis/peaks.py, backend/analysis/tracking.py, and backend/audio_io/loader.py. The contracts, docstrings and parameter defaults are already written in those files — implement the bodies to match. Read docs/TDD_fourier_partial.html sections 4.1 to 4.4 for the specification and NAVIGATION.md for the layout. Acceptance: a pure 440 Hz sine must be recovered as one partial within 5 cents. Add tests to tests/ and delete the corresponding lines from the coverage omit list in pyproject.toml as each module lands."
+
+
+To view the design document:
+
+open /Users/aaandy/_andy_ai_projects_2026/fourier_partial/docs/TDD_fourier_partial.html
+
+
+To run the existing tests:
+
+cd /Users/aaandy/_andy_ai_projects_2026/fourier_partial && .venv/bin/python -m pytest tests/test_types.py -q -o addopts=""

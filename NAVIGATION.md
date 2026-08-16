@@ -1,0 +1,103 @@
+# fourier_partial — Navigation Map
+
+> Decompose a short audio phrase into individually-audible pitched tracks using sinusoidal partial tracking, then play, visualise, and export them.
+
+## Architecture Overview
+
+A hexagonal (ports-and-adapters) Python backend does the DSP; a vanilla-JS browser frontend does visualisation and sample-accurate multi-track playback. Every replaceable concern — audio decoding, peak finding, tracking, grouping, rendering, export, job storage — sits behind a `Protocol` in `backend/core/interfaces.py`, so swapping any one of them means writing a class, not editing a pipeline.
+
+The system's central design decision is that the **residual track is defined as an exact time-domain subtraction** (`original − Σ partials`). This makes the reconstruction bit-exact by arithmetic rather than by approximation: every track can be individually imperfect and "play everything" still reproduces the upload sample for sample.
+
+## Directory Map
+
+| Directory | Layer/Role | Description |
+|---|---|---|
+| `backend/core/` | Domain | Value objects, entities, ports, errors. Depends on nothing else. |
+| `backend/audio_io/` | Adapter | Audio file decoding and validation — the untrusted-input boundary |
+| `backend/analysis/` | Business Logic | STFT → peaks → tracking → grouping. The Fourier work. |
+| `backend/synthesis/` | Business Logic | Oscillator bank resynthesis; owns the reconstruction invariant |
+| `backend/export/` | Adapter | `.wav` (lossless) and `.mid` (lossy, pitch-bent) writers |
+| `backend/api/` | Interface | FastAPI routes, WebSocket progress, background job store |
+| `frontend/js/` | Interface | Transport, canvas rendering, upload wiring |
+| `tests/` | Testing | Unit tests plus the reconstruction invariant suite |
+| `docs/` | Documentation | TDD, error log, session summaries |
+
+## Key Entry Points
+
+- **Application start:** `backend/main.py` (`python3 -m backend.main`)
+- **API routes:** `backend/api/routes.py`
+- **The domain model:** `backend/core/types.py` — read this first
+- **The contracts:** `backend/core/interfaces.py`
+- **Tunable DSP parameters:** `AnalysisParams` in `backend/core/types.py`
+- **Config:** `.env` (template at `.env.example`), loaded by `backend/config.py`
+- **Design document:** `docs/TDD_fourier_partial.html`
+
+## Module Relationships
+
+- `api` calls `analysis` and `export`; it never touches DSP primitives directly
+- `analysis` and `synthesis` depend only on `core`
+- `core` depends on nothing in the project — if you find an import from `analysis` or `api` in `core`, a dependency arrow has been reversed
+- `pipeline.py` is the only module that knows the full stage sequence; every stage is injected
+- Frontend talks to the backend only through the documented API surface in `routes.py`
+
+## Pipeline Order
+
+```
+audio_io.loader     →  mono float32 @ 44.1 kHz
+analysis.stft       →  magnitude + phase per frame
+analysis.peaks      →  sub-bin-accurate spectral peaks
+analysis.tracking   →  peaks linked into partials over time
+analysis.grouping   →  partials clustered into playable tracks
+synthesis.oscillator_bank
+                    →  each track rendered to PCM
+                    →  residual := original − Σ rendered   (exact)
+```
+
+## External Dependencies
+
+| Dependency | Purpose | Swappable? |
+|---|---|---|
+| numpy / scipy | FFT, windowing, resampling, interpolation | No (foundational) |
+| soundfile | Audio file read/write (bundles libsndfile 1.2.2) | Yes (`AudioLoader` / `TrackExporter` ports) |
+| mido | MIDI file construction | Yes (`TrackExporter` port) |
+| FastAPI + uvicorn | HTTP serving | Yes (interface layer only) |
+| websockets | **Required** for the progress socket — bare uvicorn has no WebSocket implementation and the endpoint 404s without it | No |
+| In-memory job store | Background job tracking | Yes (`JobStore` port — Redis drop-in if multi-worker is ever needed) |
+
+> **librosa was deliberately removed.** It was only wanted for resampling and f0 estimation; `scipy.signal.resample_poly` covers the first and the grouper does its own harmonic search for the second. Dropping it removes the numba/llvmlite chain, which has no prebuilt wheels for macOS 12 / Intel / CPython 3.13 and would compile from source for hours.
+
+## Build Phases
+
+Implementation is staged; each module's docstring names its phase.
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Scaffold, domain model, contracts, config, CI | **Complete** |
+| 1 | STFT, peak picking, tracking, audio loading | **Complete** |
+| 2 | Grouping, resynthesis, residual, pipeline | **Complete** |
+| 3 | WAV and MIDI export | **Complete** |
+| 4 | API routes, job store, progress socket | **Complete** |
+| 5 | Frontend: transport, canvas, workbench | **Complete** |
+| 6 | `FourierPartial.app` launcher + icon | **Complete** |
+
+All 56 tests pass. Verified end to end: upload → analyse → tracks → audio → WAV/MIDI export, with the reconstruction invariant holding at 2.98e-08 across the HTTP boundary.
+
+## How to run it
+
+| Method | Command |
+|---|---|
+| Double-click | `FourierPartial.app` in Finder |
+| Terminal | `./run.sh` (add `--no-open` to skip the browser) |
+| Dev, auto-reload | `.venv/bin/uvicorn backend.main:app --reload --port 8420` |
+
+The server picks a free port if 8420 is taken and prints `FOURIER_PARTIAL_URL=...`; the launchers parse that line rather than assuming a port. Logs go to `logs/`, deliberately **outside** `sessions/` — the server clears `sessions/` on shutdown, which would otherwise delete the log at exactly the moment it became useful.
+
+## Two Bugs Worth Knowing About
+
+Both shipped in the first implementation, both produced *plausible* output rather than a crash, and both are now pinned by `tests/test_windowing.py`:
+
+1. **Phase reference.** The DFT reports phase relative to sample 0 of its buffer, but frames are timestamped at the window *centre*. Every rendered partial came out at exactly the right frequency and amplitude but **anti-phase**, so forming the residual *doubled* each tone instead of cancelling it. A pure sine reported 19.8% partial energy where the true answer is ~95%. Fixed by zero-phase windowing (rotate the padded frame so the window centre sits at index 0) plus a cosine→sine convention correction (`+ π/2`).
+
+2. **Window sidelobes.** Hann's first sidelobe sits at −31.5 dB — *above* the −60 dB relative peak threshold. So every loud partial grew phantom neighbours about a semitone away, loud enough to threshold, consistent enough to track, and long enough to survive the duration filter. They arrived in the UI as real tracks with real note names: a pure 440 Hz sine produced **eleven** "partials", nine of them window artefacts. Switched to Blackman-Harris (−92.2 dB, comfortably below the threshold). The cost is a wider main lobe, bounded by a test asserting that two tones a major third apart still resolve.
+
+A third, smaller one: noise throws off short partials that cluster into convincing-looking harmonic groups with ~0% energy. On a real recording these outnumbered the genuine notes five to one (18 tracks where 4 were meaningful). `MIN_TRACK_ENERGY_SHARE` in `grouping.py` folds them into the residual, where they remain audible and exportable but stop claiming to be notes.

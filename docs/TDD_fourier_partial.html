@@ -1,0 +1,2846 @@
+<title>fourier_partial</title>
+
+<style>
+/* ===========================================================================
+   fourier_partial — Technical Design Document
+   Motif: scientific instrument. Mono display + serif body, phosphor ground,
+   spectral ramp reserved strictly for data.
+   =========================================================================== */
+
+/* --- Tokens: dark-first. :root IS the dark palette. -------------------- */
+:root {
+  --ground:      #08080b;
+  --panel:       #101016;
+  --raised:      #191921;
+  --rule:        #24242e;
+  --rule-soft:   #17171e;
+
+  --ink:         #e8e4d9;
+  --ink-dim:     #a8a49a;
+  --ink-faint:   #74716a;
+
+  --spec-0: #7d5fe8;
+  --spec-1: #4a7fe0;
+  --spec-2: #35b5d8;
+  --spec-3: #3fc9a8;
+  --spec-4: #a8cf5c;
+  --spec-5: #e8a33d;
+
+  --accent:      #35b5d8;
+  --accent-weak: #1b4a58;
+  --residual:    #8a8580;
+  --warn:        #e8a33d;
+  --danger:      #e06a5a;
+
+  --code-bg:     #0d0d13;
+
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --font-body: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+
+  --measure: 68ch;
+  --rail: 260px;
+}
+
+/* Light theme, for viewers whose OS says light and who haven't forced dark. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground:    #f7f4ec;
+    --panel:     #fffdf7;
+    --raised:    #efebe0;
+    --rule:      #ddd7c8;
+    --rule-soft: #e9e4d8;
+
+    --ink:       #14141a;
+    --ink-dim:   #4e4c48;
+    --ink-faint: #7d7a72;
+
+    --spec-0: #5b39c4;
+    --spec-1: #2f5fc0;
+    --spec-2: #1a7f9c;
+    --spec-3: #1f8f74;
+    --spec-4: #6d8f2a;
+    --spec-5: #b0731a;
+
+    --accent:      #1a7f9c;
+    --accent-weak: #cfe6ee;
+    --residual:    #6f6b64;
+    --warn:        #a5690f;
+    --danger:      #b2402f;
+
+    --code-bg:     #f0ece0;
+  }
+}
+
+/* Explicit light choice wins over a dark OS. */
+:root[data-theme="light"] {
+  --ground:    #f7f4ec;
+  --panel:     #fffdf7;
+  --raised:    #efebe0;
+  --rule:      #ddd7c8;
+  --rule-soft: #e9e4d8;
+
+  --ink:       #14141a;
+  --ink-dim:   #4e4c48;
+  --ink-faint: #7d7a72;
+
+  --spec-0: #5b39c4;
+  --spec-1: #2f5fc0;
+  --spec-2: #1a7f9c;
+  --spec-3: #1f8f74;
+  --spec-4: #6d8f2a;
+  --spec-5: #b0731a;
+
+  --accent:      #1a7f9c;
+  --accent-weak: #cfe6ee;
+  --residual:    #6f6b64;
+  --warn:        #a5690f;
+  --danger:      #b2402f;
+
+  --code-bg:     #f0ece0;
+}
+
+/* --- Base ---------------------------------------------------------------- */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The spectral rule: the identity element. Frequency runs low to high. */
+.spectral-rule {
+  height: 2px;
+  background: linear-gradient(90deg,
+    var(--spec-0), var(--spec-1), var(--spec-2),
+    var(--spec-3), var(--spec-4), var(--spec-5));
+  border: 0;
+  margin: 0;
+}
+
+/* --- Masthead ------------------------------------------------------------ */
+
+.masthead {
+  padding: 72px 40px 56px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.masthead-inner { max-width: 1180px; margin: 0 auto; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 20px;
+}
+
+.masthead h1 {
+  font-family: var(--font-mono);
+  font-size: clamp(28px, 5vw, 46px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 0 0 18px;
+  text-wrap: balance;
+}
+
+.masthead h1 .under { color: var(--ink-faint); }
+
+.standfirst {
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  max-width: 62ch;
+  margin: 0 0 32px;
+  text-wrap: pretty;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px 32px;
+  padding-top: 28px;
+  border-top: 1px solid var(--rule);
+  max-width: 900px;
+}
+
+.meta-grid dt {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+
+.meta-grid dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* --- Layout -------------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  gap: 56px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 56px 40px 120px;
+  align-items: start;
+}
+
+/* --- Rail ---------------------------------------------------------------- */
+
+.rail { position: sticky; top: 28px; }
+
+.rail h2 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
+  font-weight: 500;
+}
+
+.rail ol { list-style: none; margin: 0; padding: 0; }
+
+.rail li { margin-bottom: 1px; }
+
+.rail a {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 8px;
+  padding: 4px 8px 4px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.rail a:hover { color: var(--ink); border-left-color: var(--rule); }
+.rail a.is-current { color: var(--accent); border-left-color: var(--accent); }
+.rail a .n { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.rail a.is-current .n { color: var(--accent); }
+
+.rail-note {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.theme-toggle {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--ink-faint); }
+
+/* --- Sections ------------------------------------------------------------ */
+
+.doc { min-width: 0; }
+
+section { margin-bottom: 76px; scroll-margin-top: 24px; }
+
+section > h2 {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  text-wrap: balance;
+}
+
+section > h2 .n {
+  color: var(--ink-faint);
+  margin-right: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.section-blurb {
+  color: var(--ink-dim);
+  font-size: 16px;
+  margin: 0 0 30px;
+  max-width: var(--measure);
+}
+
+h3 {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin: 38px 0 12px;
+  color: var(--ink);
+}
+
+h4 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 26px 0 8px;
+  font-weight: 500;
+}
+
+p, ul, ol { max-width: var(--measure); }
+p { margin: 0 0 18px; text-wrap: pretty; }
+li { margin-bottom: 7px; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+strong { font-weight: 600; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 2px;
+  color: var(--ink);
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 0 0 22px;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+.c-dim { color: var(--ink-faint); }
+.c-key { color: var(--spec-2); }
+.c-val { color: var(--spec-4); }
+
+/* --- Tables -------------------------------------------------------------- */
+
+.table-wrap { overflow-x: auto; margin: 0 0 24px; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  font-family: var(--font-mono);
+}
+
+th {
+  text-align: left;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+  padding: 0 16px 8px 0;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+td {
+  padding: 9px 16px 9px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+  color: var(--ink-dim);
+}
+
+td:first-child { color: var(--ink); white-space: nowrap; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; padding-right: 24px; }
+
+/* --- Callouts ------------------------------------------------------------ */
+
+.callout {
+  border-left: 2px solid var(--accent);
+  background: var(--panel);
+  padding: 18px 22px;
+  margin: 0 0 24px;
+  max-width: var(--measure);
+  border-radius: 0 3px 3px 0;
+}
+
+.callout.is-theory { border-left-color: var(--spec-0); }
+.callout.is-warn   { border-left-color: var(--warn); }
+
+.callout p:last-child { margin-bottom: 0; }
+
+.callout-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 8px;
+}
+
+.invariant {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  text-align: center;
+  padding: 22px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  margin: 0 0 24px;
+  max-width: var(--measure);
+  overflow-x: auto;
+}
+.invariant .em { color: var(--accent); }
+
+/* --- Instrument panels (widgets) ---------------------------------------- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  margin: 30px 0 30px;
+  overflow: hidden;
+}
+
+.panel-head {
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.panel-head h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.panel-head .tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+.panel-body { padding: 20px; }
+
+.panel-body > p {
+  font-size: 15px;
+  color: var(--ink-dim);
+  max-width: 74ch;
+}
+
+canvas { display: block; width: 100%; background: var(--code-bg); border-radius: 2px; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.ctl { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
+
+.ctl label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.ctl .v { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  background: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px; background: var(--rule); border-radius: 1px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); margin-top: -5px;
+}
+input[type="range"]::-moz-range-track { height: 2px; background: var(--rule); }
+input[type="range"]::-moz-range-thumb {
+  width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--accent);
+}
+
+button.btn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 6px 13px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+button.btn:hover { border-color: var(--ink-faint); }
+button.btn[aria-pressed="true"], button.btn.is-on {
+  background: var(--accent); border-color: var(--accent); color: var(--ground);
+}
+
+.readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px 20px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+.readout div { min-width: 0; }
+
+.readout .k {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: 3px;
+}
+
+.readout .val {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.readout .val.good { color: var(--spec-3); }
+.readout .val.bad  { color: var(--danger); }
+.readout .val.warn { color: var(--warn); }
+
+.sliders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px 14px;
+  margin-top: 16px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.audio-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 12px;
+}
+
+/* --- Architecture diagram ------------------------------------------------ */
+
+.diagram { margin: 0 0 26px; overflow-x: auto; }
+.diagram svg { display: block; min-width: 660px; width: 100%; height: auto; }
+.diagram text { font-family: var(--font-mono); fill: var(--ink); }
+.diagram .lbl { font-size: 11px; }
+.diagram .sub { font-size: 9px; fill: var(--ink-faint); }
+.diagram .box { fill: var(--panel); stroke: var(--rule); }
+.diagram .box-core { fill: var(--raised); stroke: var(--accent); }
+.diagram .arrow { stroke: var(--ink-faint); fill: none; }
+.diagram .band { font-size: 9px; fill: var(--ink-faint); letter-spacing: 0.1em; }
+
+/* --- Phase table --------------------------------------------------------- */
+
+.status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.status.done    { background: var(--accent-weak); color: var(--accent); }
+.status.pending { background: var(--raised); color: var(--ink-faint); }
+
+/* --- Footer -------------------------------------------------------------- */
+
+.doc-footer {
+  border-top: 1px solid var(--rule);
+  padding-top: 24px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  max-width: var(--measure);
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; gap: 32px; padding: 32px 22px 80px; }
+  .rail { position: static; border-bottom: 1px solid var(--rule); padding-bottom: 20px; }
+  .rail ol { columns: 2; column-gap: 20px; }
+  .masthead { padding: 44px 22px 34px; }
+  body { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media print {
+  .rail, .panel { break-inside: avoid; }
+  body { background: #fff; color: #000; }
+}
+</style>
+
+<hr class="spectral-rule">
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">Technical Design Document &middot; v1.0 &middot; 2026-08-16</p>
+    <h1>fourier<span class="under">_</span>partial</h1>
+    <p class="standfirst">
+      Take a few seconds of audio. Pull it apart into the individual tones it is
+      actually made of &mdash; each one visible, each one soloable, each one
+      exportable as audio or as notes. Play them all together and you get your
+      recording back, sample for sample.
+    </p>
+    <dl class="meta-grid">
+      <div><dt>Status</dt><dd>Built &amp; running</dd></div>
+      <div><dt>Engine</dt><dd>Sinusoidal partial tracking</dd></div>
+      <div><dt>Stack</dt><dd>Python 3.13 &middot; FastAPI &middot; Web Audio</dd></div>
+      <div><dt>Licence</dt><dd>MIT &middot; open source</dd></div>
+      <div><dt>Input scope</dt><dd>5&ndash;30 s phrases</dd></div>
+      <div><dt>Repository</dt><dd>fourier_partial/</dd></div>
+    </dl>
+  </div>
+</header>
+
+<div class="shell">
+
+<nav class="rail" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol id="toc">
+    <li><a href="#s1"><span class="n">01</span><span>What this is</span></a></li>
+    <li><a href="#s2"><span class="n">02</span><span>Why this is hard</span></a></li>
+    <li><a href="#s3"><span class="n">03</span><span>Architecture</span></a></li>
+    <li><a href="#s4"><span class="n">04</span><span>Analysis pipeline</span></a></li>
+    <li><a href="#s5"><span class="n">05</span><span>Data model</span></a></li>
+    <li><a href="#s6"><span class="n">06</span><span>Grouping</span></a></li>
+    <li><a href="#s7"><span class="n">07</span><span>Resynthesis</span></a></li>
+    <li><a href="#s8"><span class="n">08</span><span>Visualisation</span></a></li>
+    <li><a href="#s9"><span class="n">09</span><span>Playback</span></a></li>
+    <li><a href="#s10"><span class="n">10</span><span>Export</span></a></li>
+    <li><a href="#s11"><span class="n">11</span><span>API surface</span></a></li>
+    <li><a href="#s12"><span class="n">12</span><span>Testing</span></a></li>
+    <li><a href="#s13"><span class="n">13</span><span>Security</span></a></li>
+    <li><a href="#s14"><span class="n">14</span><span>Phases &amp; open questions</span></a></li>
+  </ol>
+  <p class="rail-note">
+    Six panels in this document are live. They run real transforms in your
+    browser &mdash; nothing is pre-rendered.
+  </p>
+  <button class="theme-toggle" id="theme-toggle" type="button">Toggle theme</button>
+</nav>
+
+<main class="doc">
+
+<!-- ===================================================================== -->
+<section id="s1">
+  <h2><span class="n">01</span>What this is</h2>
+  <p class="section-blurb">The product in one page: the promise, the audience, and the one sentence everything else serves.</p>
+
+  <p>
+    When you listen to a chord, your ear does something remarkable without being
+    asked: it separates one pressure wave into distinct pitches. Quanta Magazine's
+    <a href="https://www.quantamagazine.org/what-is-the-fourier-transform-20250903/" target="_blank" rel="noopener">introduction
+    to the Fourier transform</a> opens on exactly this &mdash; <em>as we listen to a piece
+    of music, our ears perform a calculation</em> &mdash; and compares it to sniffing a
+    perfume and naming its ingredients.
+  </p>
+  <p>
+    <strong>fourier_partial does that calculation where you can see it.</strong> You give it a
+    short phrase; it gives you back the constituent tones as separate tracks you
+    can look at, solo, and export.
+  </p>
+
+  <h3>What a user does</h3>
+  <ol>
+    <li>Drops in 5&ndash;30 seconds of audio.</li>
+    <li>Watches it resolve into a stack of tracks, each a single evolving tone.</li>
+    <li>Solos one and hears a pure pitch with the original's vibrato and decay intact.</li>
+    <li>Unmutes everything and hears their recording, exactly.</li>
+    <li>Exports any track as <code>.wav</code>, or as <code>.mid</code> to rebuild in an instrument.</li>
+  </ol>
+
+  <h3>The one sentence</h3>
+  <div class="invariant">
+    <span class="em">sum(tracks)</span> == <span class="em">original</span> &nbsp;&mdash;&nbsp; exactly, always, for every input
+  </div>
+  <p>
+    Everything in this document either implements that promise or explains a
+    trade-off made to keep it. Section 7 shows why it holds by arithmetic rather
+    than by good engineering, which is what makes it worth promising at all.
+  </p>
+
+  <h3>Who it is for</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Audience</th><th>What they want from it</th></tr></thead>
+    <tbody>
+      <tr><td>Sound designers</td><td>Pull a texture apart, mute what muddies it, re-export the rest</td></tr>
+      <tr><td>Producers</td><td>Turn a sampled tone into MIDI that keeps its glides and vibrato</td></tr>
+      <tr><td>Students</td><td>See a Fourier transform do something audible rather than symbolic</td></tr>
+      <tr><td>Instrument builders</td><td>Read the harmonic recipe of a real sound to model it</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Explicitly out of scope</h3>
+  <ul>
+    <li><strong>Stem separation.</strong> This is not Demucs. It does not split vocals from drums; it splits <em>frequencies</em> from frequencies.</li>
+    <li><strong>Full songs.</strong> The cost model and the interface are built for phrases. See section 14.</li>
+    <li><strong>Real-time processing.</strong> Analysis is a background job measured in seconds.</li>
+    <li><strong>Transcription.</strong> MIDI export describes partials, not a score.</li>
+  </ul>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s2">
+  <h2><span class="n">02</span>Why this is hard</h2>
+  <p class="section-blurb">A theorem sits at the centre of this system. Most of the parameter choices in section 4 are negotiations with it, and one of the product's best features falls out of it.</p>
+
+  <p>
+    A Fourier transform tells you which frequencies a signal contains. It says
+    nothing about <em>when</em>. For music that is useless, so we chop the audio into
+    short windows and transform each one &mdash; the Short-Time Fourier Transform.
+  </p>
+  <p>
+    Immediately there is a problem. Short windows tell you accurately when things
+    happened but poorly what pitch they were. Long windows tell you the pitch
+    precisely but smear the timing. You cannot fix this by being clever. It is
+    the <strong>Heisenberg&ndash;Gabor limit</strong>: the product of time spread and frequency
+    spread has a floor.
+  </p>
+
+  <div class="invariant">
+    &Delta;t &middot; &Delta;f &nbsp;&ge;&nbsp; <span class="em">1 / 4&pi;</span>
+  </div>
+
+  <p>
+    Drag the window size in the panel below and watch it enforce itself. The
+    signal is fixed: two steady tones 15&nbsp;Hz apart, plus a single sharp click
+    halfway through. No window setting shows you both clearly.
+  </p>
+
+  <!-- WIDGET 4 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Window size &mdash; the trade you cannot win</h3>
+      <span class="tag">Live STFT</span>
+    </div>
+    <div class="panel-body">
+      <canvas id="w4-canvas" height="260" aria-label="Spectrogram of two close tones plus a click, at the selected window size"></canvas>
+      <div class="controls">
+        <div class="ctl" style="flex:1 1 260px">
+          <label for="w4-window">Window size <span class="v" id="w4-window-v">1024 samples</span></label>
+          <input type="range" id="w4-window" min="0" max="5" step="1" value="2">
+        </div>
+      </div>
+      <div class="readout">
+        <div><span class="k">Window spans</span><span class="val" id="w4-time">23.2 ms</span></div>
+        <div><span class="k">Resolves tones</span><span class="val" id="w4-freq">43.1 Hz apart</span></div>
+        <div><span class="k">Product (&Delta;t&middot;&Delta;f)</span><span class="val good" id="w4-product">1.000</span></div>
+        <div><span class="k">Two tones</span><span class="val" id="w4-tones">merged</span></div>
+        <div><span class="k">Click</span><span class="val" id="w4-click">sharp</span></div>
+      </div>
+      <p class="audio-note">
+        The product stays at 1.000 no matter where you put the slider. That number is the theorem.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout is-theory">
+    <p class="callout-label">Theory panel &mdash; where the residual comes from</p>
+    <p>
+      Partial tracking assumes the signal is locally a handful of slowly-varying
+      sine waves &mdash; that is, <strong>sparse in frequency</strong>. An uncertainty principle
+      says a signal cannot be sparse in time and in frequency at once. A click is
+      maximally concentrated in time, so its energy must be spread across all
+      frequencies, and no finite set of partials can represent it.
+    </p>
+    <p>
+      So the residual track is not the leftovers of a mediocre analyser. It is
+      where the mathematics says that material has to go. That reframing has a
+      product consequence: the residual is presented as a <strong>first-class track with
+      its own character</strong> &mdash; the breath, the bow noise, the stick hit &mdash; not
+      as a greyed-out error bucket.
+    </p>
+  </div>
+
+  <h3>The 2026 result, and an honest caveat</h3>
+  <p>
+    The classical limit has been sharpened. Quanta reported in August 2026 that
+    <a href="https://www.quantamagazine.org/graduate-student-proves-the-fractal-uncertainty-principle-20260812/" target="_blank" rel="noopener">Alex
+    Cohen, then a doctoral student at MIT, proved the fractal uncertainty
+    principle in all higher dimensions</a> &mdash; extending the one-dimensional case
+    established by Jean Bourgain and Semyon Dyatlov in 2016. The result appeared
+    in the <em>Annals of Mathematics</em>. The principle says a function cannot be
+    <em>porous</em> &mdash; fractal-like, full of gaps &mdash; in both physical space and
+    frequency space at once.
+  </p>
+  <p>
+    We are not going to code against this. It would be dishonest to claim
+    otherwise. What it offers is a qualitative expectation worth stating in the
+    product: sounds whose spectra are gappy and inharmonic &mdash; bells, cymbals,
+    struck metal &mdash; are exactly the ones that resist clean localisation, and are
+    where partial tracking should be expected to degrade. Section 12 turns that
+    into a test.
+  </p>
+
+  <div class="callout is-theory">
+    <p class="callout-label">Analogy, not application &mdash; stated as such</p>
+    <p>
+      Cohen's proof required defining <em>line porosity</em>, to exclude fractals
+      containing uninterrupted lines &mdash; those break the principle. A harmonic
+      series is an evenly spaced arithmetic progression: the &ldquo;line&rdquo; of the
+      frequency axis. And harmonic sounds are precisely the ones this tool
+      handles beautifully.
+    </p>
+    <p>
+      The structured case that breaks the theorem is the structured case that
+      makes the tool work. That is a resonance worth noticing, not a proof of
+      anything, and no engineering decision rests on it.
+    </p>
+  </div>
+
+  <h3>The vocabulary, once</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
+    <tbody>
+      <tr><td>Frame</td><td>One windowed slice of audio, transformed once</td></tr>
+      <tr><td>Bin</td><td>One frequency slot in a frame's spectrum</td></tr>
+      <tr><td>Hop</td><td>Distance between consecutive window starts, in samples</td></tr>
+      <tr><td>Peak</td><td>A local maximum in one frame's spectrum &mdash; a tone, at that instant</td></tr>
+      <tr><td>Partial</td><td>Peaks linked across frames: one tone's whole life</td></tr>
+      <tr><td>Trajectory</td><td>A partial's path in frequency and amplitude over time</td></tr>
+      <tr><td>Track</td><td>A playable lane: one partial, a harmonic group, or the residual</td></tr>
+      <tr><td>Residual</td><td><code>original &minus; &Sigma;partials</code>. Everything the tones did not capture</td></tr>
+      <tr><td>Cents</td><td>Pitch distance; 100 cents = 1 semitone. Ratios, not Hz</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Where the tones come from</h3>
+  <p>
+    Before the pipeline, one intuition worth having in your hands. Any periodic
+    sound is a sum of sine waves at integer multiples of a fundamental. Below,
+    build one: raise the harmonics and a plain sine becomes a reedy sawtooth. The
+    analyser's job is this in reverse.
+  </p>
+
+  <!-- WIDGET 1 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Additive synthesis &mdash; the process, run backwards</h3>
+      <span class="tag">Audio</span>
+    </div>
+    <div class="panel-body">
+      <canvas id="w1-canvas" height="180" aria-label="Waveform produced by the current harmonic amplitudes"></canvas>
+      <div class="sliders-grid" id="w1-sliders"></div>
+      <div class="controls">
+        <button class="btn" id="w1-play" type="button" aria-pressed="false">Play</button>
+        <button class="btn" id="w1-saw" type="button">Sawtooth (1/n)</button>
+        <button class="btn" id="w1-square" type="button">Square (odd only)</button>
+        <button class="btn" id="w1-sine" type="button">Sine only</button>
+        <button class="btn" id="w1-clear" type="button">Clear</button>
+      </div>
+      <p class="audio-note">110 Hz fundamental, 10 harmonics. Sound plays on click &mdash; browsers require a gesture before audio.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s3">
+  <h2><span class="n">03</span>Architecture</h2>
+  <p class="section-blurb">Ports and adapters. The domain knows nothing about FastAPI, libsndfile, or the browser.</p>
+
+  <p>
+    Python does the analysis; the browser does visualisation and playback. That
+    split is not aesthetic &mdash; it follows from section 9, where sample-accurate
+    multi-track sync turns out to be nearly free in Web Audio and awkward
+    everywhere else.
+  </p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 900 400" role="img" aria-label="Architecture: browser frontend over a FastAPI interface layer, over analysis and synthesis services, over a core domain of ports and types.">
+      <text class="band" x="8" y="30">BROWSER</text>
+      <rect class="box" x="90" y="14" width="150" height="42" rx="3"/>
+      <text class="lbl" x="106" y="34">upload</text><text class="sub" x="106" y="47">drop / validate</text>
+      <rect class="box" x="260" y="14" width="150" height="42" rx="3"/>
+      <text class="lbl" x="276" y="34">waveform.js</text><text class="sub" x="276" y="47">canvas trajectories</text>
+      <rect class="box" x="430" y="14" width="170" height="42" rx="3"/>
+      <text class="lbl" x="446" y="34">transport.js</text><text class="sub" x="446" y="47">sample-accurate sync</text>
+      <rect class="box" x="620" y="14" width="150" height="42" rx="3"/>
+      <text class="lbl" x="636" y="34">export UI</text><text class="sub" x="636" y="47">wav / mid</text>
+
+      <path class="arrow" d="M430 60 L430 92" marker-end="url(#ah)"/>
+      <path class="arrow" d="M430 148 L430 116" marker-end="url(#ah)"/>
+
+      <text class="band" x="8" y="118">HTTP / WS</text>
+      <rect class="box" x="90" y="96" width="680" height="42" rx="3"/>
+      <text class="lbl" x="106" y="116">backend/api/ &mdash; routes, job store, progress socket</text>
+      <text class="sub" x="106" y="129">validation, rate limiting, error sanitisation. Calls services; never touches DSP.</text>
+
+      <path class="arrow" d="M300 138 L300 168" marker-end="url(#ah)"/>
+      <path class="arrow" d="M600 138 L600 168" marker-end="url(#ah)"/>
+
+      <text class="band" x="8" y="196">SERVICES</text>
+      <rect class="box" x="90" y="172" width="330" height="82" rx="3"/>
+      <text class="lbl" x="106" y="192">backend/analysis/</text>
+      <text class="sub" x="106" y="208">stft &rarr; peaks &rarr; tracking &rarr; grouping</text>
+      <text class="sub" x="106" y="222">pipeline.py composes; every stage injected</text>
+      <text class="sub" x="106" y="240">the Fourier work</text>
+
+      <rect class="box" x="450" y="172" width="150" height="82" rx="3"/>
+      <text class="lbl" x="466" y="192">synthesis/</text>
+      <text class="sub" x="466" y="208">oscillator bank</text>
+      <text class="sub" x="466" y="222">owns the</text>
+      <text class="sub" x="466" y="236">invariant</text>
+
+      <rect class="box" x="620" y="172" width="150" height="82" rx="3"/>
+      <text class="lbl" x="636" y="192">export/</text>
+      <text class="sub" x="636" y="208">wav (lossless)</text>
+      <text class="sub" x="636" y="222">mid (lossy,</text>
+      <text class="sub" x="636" y="236">documented)</text>
+
+      <path class="arrow" d="M255 254 L255 288" marker-end="url(#ah)"/>
+      <path class="arrow" d="M525 254 L525 288" marker-end="url(#ah)"/>
+      <path class="arrow" d="M695 254 L695 288" marker-end="url(#ah)"/>
+
+      <text class="band" x="8" y="316">DOMAIN</text>
+      <rect class="box-core" x="90" y="292" width="680" height="72" rx="3"/>
+      <text class="lbl" x="106" y="313">backend/core/ &mdash; types, interfaces, errors</text>
+      <text class="sub" x="106" y="330">AnalysisParams &middot; Peak &middot; Partial &middot; Track &middot; AnalysisResult</text>
+      <text class="sub" x="106" y="345">Protocols: AudioLoader, SpectralAnalyzer, PartialTracker, TrackGrouper, Renderer, TrackExporter, JobStore</text>
+      <text class="sub" x="106" y="359">Depends on nothing. Everything depends on it.</text>
+
+      <text class="sub" x="90" y="386">audio_io/ sits beside analysis as the untrusted-input adapter &mdash; see section 13.</text>
+
+      <defs>
+        <marker id="ah" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0 0 L8 4 L0 8 z" fill="currentColor" style="color:var(--ink-faint)"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+
+  <h3>The dependency rule</h3>
+  <p>
+    Arrows point inward, always. <code>core</code> imports nothing from the project. If you
+    ever find <code>from backend.analysis import ...</code> inside <code>core/</code>, an arrow has been
+    reversed and the design has quietly stopped being the design.
+  </p>
+
+  <h3>What is swappable, and why that is cheap</h3>
+  <p>
+    Every replaceable concern sits behind a <code>typing.Protocol</code> in
+    <code>backend/core/interfaces.py</code>. Structural typing means an adapter satisfies a
+    contract without inheriting from anything &mdash; so a fake in a test is a plain
+    class with two methods, and a real replacement is no harder.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Port</th><th>Default adapter</th><th>Why you might swap it</th></tr></thead>
+    <tbody>
+      <tr><td>AudioLoader</td><td>soundfile + scipy</td><td>ffmpeg for exotic containers</td></tr>
+      <tr><td>SpectralAnalyzer</td><td>numpy rfft</td><td>Reassigned spectrogram; constant-Q</td></tr>
+      <tr><td>PartialTracker</td><td>McAulay&ndash;Quatieri, greedy</td><td>Hungarian assignment if greedy proves inadequate</td></tr>
+      <tr><td>TrackGrouper</td><td>Harmonic clustering</td><td>NMF components; timbre clustering</td></tr>
+      <tr><td>Renderer</td><td>Oscillator bank</td><td>Inverse-FFT overlap-add, if speed demands</td></tr>
+      <tr><td>TrackExporter</td><td>soundfile / mido</td><td>New formats: SDIF, MPE, MusicXML</td></tr>
+      <tr><td>JobStore</td><td>In-memory + TTL</td><td>Redis, once one worker is not enough</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s4">
+  <h2><span class="n">04</span>Analysis pipeline</h2>
+  <p class="section-blurb">Waveform in, partials out. Five stages, every parameter named and defaulted.</p>
+
+<pre><code><span class="c-dim"># backend/analysis/pipeline.py</span>
+audio_io.loader     &rarr;  mono float32 @ 44.1 kHz, validated
+analysis.stft       &rarr;  magnitude + phase, per frame
+analysis.peaks      &rarr;  sub-bin-accurate spectral peaks
+analysis.tracking   &rarr;  peaks linked into partials across time
+analysis.grouping   &rarr;  partials clustered into playable tracks
+synthesis           &rarr;  each track rendered; residual = original &minus; &Sigma;rendered</code></pre>
+
+  <h3>4.1 &nbsp;Ingest</h3>
+  <p>
+    Decode, downmix to mono, resample to 44.1&nbsp;kHz. Three decisions worth
+    recording:
+  </p>
+  <ul>
+    <li><strong>Mono by averaging.</strong> Stereo analysis doubles the partial count and adds a phase-cancellation class of bug. Deferred to section 14.</li>
+    <li><strong>Anti-aliased resampling</strong> (<code>scipy.signal.resample_poly</code>, on the gcd-reduced ratio). Cheap resampling folds energy above the new Nyquist limit back down into the audible band as aliases &mdash; and an alias is a spectral peak that looks completely real and is not. This tool's whole job is to point at a peak and say &ldquo;there is a tone here&rdquo;, so aliasing is the worst possible failure mode: confidently wrong. <code>resample_poly</code> applies a proper FIR anti-aliasing filter as part of the conversion, so those ghosts never form.</li>
+    <li><strong>No normalisation of quiet input.</strong> Relative amplitudes are meaningful and rescaling would distort the energy diagnostics. Only clip-hot input is scaled down.</li>
+  </ul>
+
+  <h3>4.2 &nbsp;STFT</h3>
+  <p>
+    <strong>Blackman-Harris</strong> window, 4096 samples, hop 512 (8&times; overlap),
+    zero-padded 4&times;.
+  </p>
+  <div class="callout is-warn">
+    <p class="callout-label">Changed during implementation &mdash; and why</p>
+    <p>
+      This originally specified a Hann window. Building it proved that wrong.
+      Hann's first sidelobe sits at <strong>&minus;31.5&nbsp;dB</strong>, and the peak
+      threshold is &minus;60&nbsp;dB relative &mdash; so every loud partial grew a pair
+      of phantom neighbours about a semitone away, loud enough to pass the
+      threshold, stable enough to survive tracking, and long enough to survive
+      the duration filter. They arrived in the interface as tracks with
+      confident note names. A pure 440&nbsp;Hz sine produced <strong>eleven</strong>
+      partials, ten of them window artefacts.
+    </p>
+    <p>
+      Blackman-Harris puts its first sidelobe at <strong>&minus;92.2&nbsp;dB</strong>,
+      30&nbsp;dB below the threshold, so they cannot be picked at all. The same
+      sine now produces exactly one. The cost is a main lobe twice as wide, so
+      close tones need more separation &mdash; <code>tests/test_windowing.py</code> pins
+      that a major third still resolves.
+    </p>
+    <p>
+      For a tool whose promise is &ldquo;every track is a real tone&rdquo;, inventing
+      tones is a far worse failure than merging two close ones.
+    </p>
+  </div>
+  <p>
+    Zero-padding adds no real resolution &mdash; that is fixed by window length, as
+    section 2 showed &mdash; but it interpolates the spectrum so the peak-finder in
+    4.3 has a smoother curve to work with.
+  </p>
+  <p>
+    Frames are timestamped at the window's <strong>centre</strong>, not its start. The energy
+    sits in the middle; using the start would shift every trajectory earlier by
+    half a window.
+  </p>
+
+  <h3>4.3 &nbsp;Peak picking</h3>
+  <p>
+    A bin is a candidate if it exceeds both neighbours. Candidates below
+    &minus;60&nbsp;dB relative to the loudest bin <em>in that frame</em> are discarded &mdash;
+    relative, so quiet passages are still analysed rather than ignored.
+  </p>
+  <p>
+    Then the important part. Bins are 10.8&nbsp;Hz apart, so a 440&nbsp;Hz tone
+    does not land on one; it falls between bins 40 and 41. Taking the taller bin
+    rounds it to 431 or 442&nbsp;Hz &mdash; audibly out of tune, and enough jitter to
+    fragment tracking. Fitting a parabola through the peak and its neighbours in
+    dB recovers the true frequency to within a few cents.
+  </p>
+  <p>Drag the true frequency and compare the two answers:</p>
+
+  <!-- WIDGET 2 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Sub-bin peak picking &mdash; three lines of arithmetic, tens of cents</h3>
+      <span class="tag">Live FFT</span>
+    </div>
+    <div class="panel-body">
+      <canvas id="w2-canvas" height="230" aria-label="Spectrum bins near a peak, with nearest-bin and parabolic estimates marked"></canvas>
+      <div class="controls">
+        <div class="ctl" style="flex:1 1 280px">
+          <label for="w2-freq">True frequency <span class="v" id="w2-freq-v">436.0 Hz</span></label>
+          <input type="range" id="w2-freq" min="4280" max="4520" step="1" value="4360">
+        </div>
+      </div>
+      <div class="readout">
+        <div><span class="k">Bin spacing</span><span class="val">10.77 Hz</span></div>
+        <div><span class="k">Nearest bin says</span><span class="val" id="w2-bin">441.5 Hz</span></div>
+        <div><span class="k">&nbsp;&rarr; error</span><span class="val bad" id="w2-bin-err">+22 cents</span></div>
+        <div><span class="k">Parabola says</span><span class="val" id="w2-par">436.0 Hz</span></div>
+        <div><span class="k">&nbsp;&rarr; error</span><span class="val good" id="w2-par-err">+0 cents</span></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--ink-faint)"></i>FFT bins</span>
+        <span><i style="background:var(--danger)"></i>nearest bin</span>
+        <span><i style="background:var(--spec-3)"></i>parabola vertex</span>
+        <span><i style="background:var(--accent)"></i>true frequency</span>
+      </div>
+      <p class="audio-note">Real 4096-point FFT of a Hann-windowed sine, computed in your browser on each drag.</p>
+    </div>
+  </div>
+
+  <h3>4.4 &nbsp;Partial tracking</h3>
+  <p>
+    Peaks per frame are still just snapshots. Tracking links them into
+    trajectories &mdash; McAulay&ndash;Quatieri, 1986. Each frame, every peak is matched to
+    an existing partial or starts a new one:
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Event</th><th>Condition</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>BIRTH</td><td>Peak matches no partial</td><td>Start a new partial</td></tr>
+      <tr><td>CONTINUE</td><td>Within 60 cents of a partial's last frame</td><td>Extend the trajectory</td></tr>
+      <tr><td>DEATH</td><td>Unmatched for &gt; 3 frames</td><td>Close the partial out</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>
+    Distance is measured in <strong>cents, not Hz</strong>. A 10&nbsp;Hz drift is enormous at
+    100&nbsp;Hz and inaudible at 5&nbsp;kHz; the ear hears ratios, so the tracker
+    must too. A single Hz tolerance would track bass rigidly and treble not at
+    all.
+  </p>
+  <p>
+    Gap tolerance exists because a partial can be briefly masked by a louder
+    neighbour. Killing it instantly would shatter one sustained note into a
+    dozen fragments, each too short to survive the 50&nbsp;ms minimum &mdash; so a real
+    note would silently become residual noise. Watch it happen:
+  </p>
+
+  <!-- WIDGET 3 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Tracking &mdash; birth, continuation, death</h3>
+      <span class="tag">Animated</span>
+    </div>
+    <div class="panel-body">
+      <canvas id="w3-canvas" height="250" aria-label="Animated partial tracking showing peaks being linked into trajectories"></canvas>
+      <div class="controls">
+        <button class="btn" id="w3-play" type="button">Run</button>
+        <button class="btn" id="w3-reset" type="button">Reset</button>
+        <div class="ctl" style="flex:1 1 200px">
+          <label for="w3-gap">Gap tolerance <span class="v" id="w3-gap-v">3 frames</span></label>
+          <input type="range" id="w3-gap" min="0" max="6" step="1" value="3">
+        </div>
+        <div class="ctl" style="flex:1 1 200px">
+          <label for="w3-drift">Drift tolerance <span class="v" id="w3-drift-v">60 cents</span></label>
+          <input type="range" id="w3-drift" min="10" max="200" step="10" value="60">
+        </div>
+      </div>
+      <div class="readout">
+        <div><span class="k">Partials born</span><span class="val" id="w3-born">0</span></div>
+        <div><span class="k">Surviving &ge; 50 ms</span><span class="val good" id="w3-kept">0</span></div>
+        <div><span class="k">Too short &rarr; residual</span><span class="val warn" id="w3-dropped">0</span></div>
+      </div>
+      <p class="audio-note">
+        Set gap tolerance to 0 and run again: the vibrato partial fragments, and fragments get discarded.
+      </p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p class="callout-label">Nothing is ever lost</p>
+    <p>
+      Partials shorter than the minimum are discarded here &mdash; but they do not
+      disappear from the output. Because the residual is computed downstream as
+      an exact subtraction, everything discarded at any stage reappears in the
+      residual track automatically. The user still hears it. Section 7.
+    </p>
+  </div>
+
+  <h3>4.5 &nbsp;Full parameter table</h3>
+  <p>All of these live in <code>AnalysisParams</code> in <code>backend/core/types.py</code>, marked ADJUSTABLE.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Parameter</th><th class="num">Default</th><th>Raise it to&hellip;</th><th>Lower it to&hellip;</th></tr></thead>
+    <tbody>
+      <tr><td>sample_rate</td><td class="num">44100</td><td>Keep more top end</td><td>Analyse faster</td></tr>
+      <tr><td>window_size</td><td class="num">4096</td><td>Separate closer pitches</td><td>Sharpen transients</td></tr>
+      <tr><td>hop_size</td><td class="num">512</td><td>Cut compute</td><td>Smooth trajectories</td></tr>
+      <tr><td>zero_pad_factor</td><td class="num">4</td><td>Land peaks more precisely</td><td>Cut memory</td></tr>
+      <tr><td>peak_threshold_db</td><td class="num">&minus;60</td><td>Fewer, cleaner partials</td><td>Catch quiet detail</td></tr>
+      <tr><td>max_peaks_per_frame</td><td class="num">120</td><td>Handle dense polyphony</td><td>Bound worst-case cost</td></tr>
+      <tr><td>max_freq_drift_cents</td><td class="num">60</td><td>Follow wide vibrato</td><td>Stop tracks jumping pitch</td></tr>
+      <tr><td>max_gap_frames</td><td class="num">3</td><td>Survive heavy masking</td><td>Track strictly</td></tr>
+      <tr><td>min_partial_duration_ms</td><td class="num">50</td><td>Reject noise-as-tone</td><td>Keep short blips</td></tr>
+      <tr><td>harmonic_tolerance_cents</td><td class="num">50</td><td>Group stretched harmonics</td><td>Group strictly</td></tr>
+      <tr><td>max_tracks</td><td class="num">200</td><td>Expose more detail</td><td>Keep the UI usable</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s5">
+  <h2><span class="n">05</span>Data model</h2>
+  <p class="section-blurb">Implemented in full. Immutable value objects, entities with private state, and defensive copies at every boundary.</p>
+
+<pre><code><span class="c-key">Peak</span>          frame_index, frequency_hz, amplitude, phase_rad
+   <span class="c-dim">&darr; linked across frames by the tracker</span>
+<span class="c-key">PartialFrame</span>  time_s, frequency_hz, amplitude, phase_rad
+   <span class="c-dim">&darr; accumulated into a trajectory</span>
+<span class="c-key">Partial</span>       partial_id, frames[]  &rarr;  duration, mean_frequency, energy
+   <span class="c-dim">&darr; clustered by the grouper</span>
+<span class="c-key">Track</span>         track_id, kind, label, partials[], audio
+   <span class="c-dim">&darr; assembled with provenance</span>
+<span class="c-key">AnalysisResult</span>  sample_rate, duration, tracks[], params, original</code></pre>
+
+  <h3>Encapsulation, and why it is not ceremony</h3>
+  <p>
+    An <code>AnalysisResult</code> is expensive to produce and is read by the API, the
+    exporters, and the verifier. If any of them could mutate a trajectory, the
+    reconstruction invariant would become unverifiable &mdash; you could not tell
+    whether an error came from the renderer or from something scribbling on the
+    result afterwards. So:
+  </p>
+  <ul>
+    <li><code>Partial.frames</code> returns a <strong>tuple</strong>, not the internal list.</li>
+    <li><code>Track.audio</code> returns a numpy view with <code>writeable = False</code>.</li>
+    <li><code>Track.attach_audio()</code> raises if called twice &mdash; audio is set once, by the renderer.</li>
+    <li><code>append_frame()</code> enforces strict time ordering, so a trajectory cannot be built out of order.</li>
+    <li><code>AnalysisParams</code> is frozen, so a result can always report exactly what produced it.</li>
+  </ul>
+
+  <h3>Amplitude-weighted mean frequency</h3>
+  <p>
+    <code>Partial.mean_frequency_hz</code> weights by amplitude rather than averaging plainly.
+    The pitch you perceive is the pitch the partial held while it was loud; a
+    long quiet tail that drifts should not drag the label. This is the number
+    that becomes the track's note name and its MIDI note, so getting it wrong is
+    visible twice.
+  </p>
+
+  <h3>Fractional MIDI notes</h3>
+  <p>
+    <code>hz_to_midi()</code> deliberately returns a float. 60.5 means &ldquo;halfway between C4
+    and C&sharp;4&rdquo;, which section 10 turns into a note plus a pitch bend. Rounding
+    here would throw away exactly the microtonal detail that makes partials worth
+    looking at.
+  </p>
+
+  <h3>Wire format</h3>
+  <p>
+    Track metadata goes to the browser as JSON; audio goes separately as binary.
+    Trajectories are <strong>downsampled to display resolution</strong> before sending &mdash; a
+    20-second track has ~1700 points and the row is ~800 pixels wide, so sending
+    full resolution is pure waste.
+  </p>
+
+<pre><code>{
+  <span class="c-key">"track_id"</span>: 3,
+  <span class="c-key">"kind"</span>: <span class="c-val">"harmonic_group"</span>,
+  <span class="c-key">"label"</span>: <span class="c-val">"A3 +4c + 6 harmonics"</span>,
+  <span class="c-key">"start_time_s"</span>: 0.31,
+  <span class="c-key">"end_time_s"</span>: 2.87,
+  <span class="c-key">"mean_frequency_hz"</span>: 220.5,
+  <span class="c-key">"energy_ratio"</span>: 0.184,
+  <span class="c-key">"partial_count"</span>: 7,
+  <span class="c-key">"exportable_as_midi"</span>: true,
+  <span class="c-key">"trajectory"</span>: [[0.31, 220.4, 0.02], [0.33, 220.6, 0.31], <span class="c-dim">...</span>]
+}</code></pre>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s6">
+  <h2><span class="n">06</span>Grouping</h2>
+  <p class="section-blurb">A 20-second phrase yields 300&ndash;800 partials. A flat list of 800 rows is not an interface; it is a wall.</p>
+
+  <p>
+    Two problems, one solution. First, volume: no one can operate 800 controls.
+    Second, and more interesting: an individual partial is often not what a user
+    <em>means</em> by a sound. The 3rd harmonic of a cello note is not a thing anyone
+    wants to solo. The note is.
+  </p>
+
+  <h3>Algorithm</h3>
+  <ol>
+    <li>Rank partials by energy.</li>
+    <li>Take the strongest ungrouped partial; treat its frequency as a candidate fundamental <em>f</em><sub>0</sub>.</li>
+    <li>Claim every ungrouped partial within 50 cents of <em>n</em>&middot;<em>f</em><sub>0</sub>, for <em>n</em> up to 16.</li>
+    <li>If 3 or more were claimed, emit a HARMONIC_GROUP. Otherwise emit the partial alone as a PARTIAL.</li>
+    <li>Repeat until every partial is grouped or <code>max_tracks</code> is reached.</li>
+  </ol>
+
+  <div class="callout is-warn">
+    <p class="callout-label">A silent cap would be a lie</p>
+    <p>
+      Partials beyond <code>max_tracks</code> are dropped from the track list. They still
+      <em>sound</em> &mdash; the residual absorbs them &mdash; but they are no longer separately
+      soloable. The UI must say so explicitly. An interface that shows 200 tracks
+      when 340 were found, without comment, reads as &ldquo;here is everything&rdquo; when it
+      is not.
+    </p>
+  </div>
+
+  <h3>Known weaknesses, stated up front</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Case</th><th>What happens</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Octave-related notes</td><td>A2 and A3 sounding together: A3's partials are a subset of A2's harmonics, so they may merge into one group</td><td>Onset-time agreement as a secondary grouping cue &mdash; Phase 2b</td></tr>
+      <tr><td>Inharmonic sources</td><td>Bells and struck metal have stretched partials; harmonic grouping largely fails and they stay as individual PARTIAL tracks</td><td>Acceptable. Individual partials of a bell are genuinely interesting to solo</td></tr>
+      <tr><td>Dense polyphony</td><td>Harmonics collide; a partial may be claimed by the wrong fundamental</td><td>Energy-ordered greedy claiming means the loudest voice wins, which matches perception</td></tr>
+      <tr><td>Strong vibrato</td><td>Harmonics move together; tolerance in cents handles this correctly by construction</td><td>None needed</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Interface consequence</h3>
+  <p>
+    Groups fold. A harmonic group shows one row with its label and combined
+    waveform; expanding it reveals the constituent partials as indented rows,
+    each independently soloable. That keeps the common case at ~15 rows and the
+    detailed case reachable.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s7">
+  <h2><span class="n">07</span>Resynthesis and the invariant</h2>
+  <p class="section-blurb">The most important section. Everything else is quality; this is correctness.</p>
+
+  <h3>7.1 &nbsp;Rendering a partial</h3>
+  <p>
+    Each partial is a recipe: at time <em>t</em>, oscillate at <em>f(t)</em> with amplitude
+    <em>a(t)</em>. Two things go wrong if you are careless:
+  </p>
+  <ul>
+    <li><strong>Clicks.</strong> Jump the amplitude at frame boundaries and you get 86 clicks per second, which sounds like buzzing, not music. Interpolate amplitude linearly across each hop.</li>
+    <li><strong>Phase tearing.</strong> Restart the oscillator's phase each frame and the waveform rips. Accumulate phase continuously: <code>phase += 2&pi;f[n]/sr</code>.</li>
+  </ul>
+  <p>
+    McAulay&ndash;Quatieri fit a cubic polynomial to phase. Linear frequency
+    interpolation with accumulated phase is simpler, nearly as good, and much
+    easier to get right. Start there; measure before reaching for the cubic.
+  </p>
+
+  <h3>7.2 &nbsp;The residual, and why the promise holds</h3>
+  <p>
+    Here is the whole design decision. Rather than modelling the noise, or
+    filtering for what the partials missed, the residual is defined as a literal
+    time-domain subtraction:
+  </p>
+
+  <div class="invariant">
+    residual &nbsp;:=&nbsp; original &nbsp;&minus;&nbsp; &Sigma; rendered partials
+  </div>
+
+  <p>Therefore, by simple rearrangement:</p>
+
+  <div class="invariant">
+    &Sigma; all tracks &nbsp;<span class="em">&equiv;</span>&nbsp; original
+  </div>
+
+  <p>
+    Not approximately. Identically. And critically: <strong>this holds regardless of how
+    well the analysis performed</strong>. Every partial could be mistracked, the grouping
+    could be nonsense, and the sum would still reproduce the upload sample for
+    sample. Analysis quality determines how <em>musically meaningful</em> each track is;
+    it never determines whether the mix reconstructs.
+  </p>
+  <p>
+    That removes an entire class of risk from the project. The headline claim
+    cannot be broken by a bad tracking heuristic, only by an arithmetic bug &mdash;
+    which section 12 asserts against in CI.
+  </p>
+
+  <div class="callout is-warn">
+    <p class="callout-label">Implementation note that matters</p>
+    <p>
+      Accumulate the sum in float64 and cast once at the end. Summing several
+      hundred float32 buffers accrues rounding error that shows up as an audible
+      noise floor in the residual &mdash; a bug that looks like a DSP failure and is
+      actually a numerics one.
+    </p>
+  </div>
+
+  <div class="callout is-theory">
+    <p class="callout-label">The bug this design hid, and what it cost</p>
+    <p>
+      The invariant is powerful but it is also <em>anaesthetic</em>: it holds even when
+      the analysis is badly wrong, so it cannot tell you that anything is
+      broken. The first working build reported a perfect
+      2.98&times;10<sup>&minus;8</sup> reconstruction error while quietly producing
+      garbage.
+    </p>
+    <p>
+      The cause was a phase-reference mismatch. A DFT reports phase relative to
+      sample 0 of its input, but frames are timestamped at the window
+      <em>centre</em> &mdash; half a window apart, 46&nbsp;ms at the defaults. Every
+      rendered partial came out at exactly the right frequency and exactly the
+      right amplitude and <strong>exactly anti-phase</strong> (measured correlation with
+      the original: &minus;0.9987). Subtracting an inverted copy doubles the tone
+      instead of cancelling it, so a pure sine reported <strong>19.8%</strong> of its
+      energy as partials when the true answer is ~100%.
+    </p>
+    <p>
+      The fix is zero-phase windowing (rotate the padded frame so the window
+      centre lands at index 0) plus a &pi;/2 offset to convert the DFT's cosine
+      convention to the renderer's sine. Both are needed; either alone still
+      fails. Afterwards: correlation <strong>+0.9982</strong>, partial energy
+      <strong>94.6%</strong>.
+    </p>
+    <p>
+      The lesson is about which metric to watch. Reconstruction error was
+      constant across the bug and the fix. <em>Partial energy ratio</em> moved from
+      19.8% to 94.6% &mdash; so that, not the invariant, is the number that tells
+      you the analysis is working. It is now a first-class diagnostic in the
+      interface, and <code>tests/test_windowing.py</code> asserts the phase directly.
+    </p>
+  </div>
+
+  <p>Hear the identity hold. Below, a synthetic phrase built as tone + noise:</p>
+
+  <!-- WIDGET 5 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h3>The residual is not an error bucket</h3>
+      <span class="tag">Audio</span>
+    </div>
+    <div class="panel-body">
+      <canvas id="w5-canvas" height="200" aria-label="Waveforms of the original, the partials, and the residual"></canvas>
+      <div class="controls">
+        <button class="btn" id="w5-orig" type="button">Original</button>
+        <button class="btn" id="w5-part" type="button">Partials only</button>
+        <button class="btn" id="w5-res" type="button">Residual only</button>
+        <button class="btn" id="w5-sum" type="button">Partials + residual</button>
+        <button class="btn" id="w5-stop" type="button">Stop</button>
+      </div>
+      <div class="readout">
+        <div><span class="k">Partial energy</span><span class="val" id="w5-pe">&mdash;</span></div>
+        <div><span class="k">Residual energy</span><span class="val" id="w5-re">&mdash;</span></div>
+        <div><span class="k">Max sample error</span><span class="val good" id="w5-err">&mdash;</span></div>
+        <div><span class="k">Reconstruction</span><span class="val good" id="w5-ok">&mdash;</span></div>
+      </div>
+      <p class="audio-note">
+        &ldquo;Partials + residual&rdquo; and &ldquo;Original&rdquo; are bit-identical. The error figure is computed live, not asserted.
+      </p>
+    </div>
+  </div>
+
+  <h3>7.3 &nbsp;Cost</h3>
+  <p>
+    Rendering is the pipeline's most expensive stage &mdash; roughly 35% of total
+    time. A 20-second phrase with 400 partials means 400 &times; 882,000 sample
+    writes. Vectorised per-partial in numpy this lands in low single-digit
+    seconds; the phase accumulation is the part that resists vectorisation and
+    should be the first thing profiled if it disappoints.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s8">
+  <h2><span class="n">08</span>Visualisation</h2>
+  <p class="section-blurb">Two views on one timeline. The default is the one that answers the question users actually have.</p>
+
+  <h3>8.1 &nbsp;Amplitude view</h3>
+  <p>
+    The familiar envelope. Good for seeing <em>when</em> a track is active; useless for
+    seeing <em>what pitch</em> it is. Available, not default.
+  </p>
+
+  <h3>8.2 &nbsp;Trajectory view &mdash; the default</h3>
+  <p>
+    Frequency plotted against time, with line brightness following amplitude.
+    This is the view that makes a partial legible as a <em>tone</em>: the vibrato is a
+    ripple, the glide is a ramp, the decay is a fade. &ldquo;Which of these is the one
+    that slides?&rdquo; is a question the amplitude view cannot answer and this one
+    answers at a glance.
+  </p>
+
+  <h3>The frequency axis is logarithmic</h3>
+  <p>
+    Pitch perception is logarithmic, so an octave must occupy the same height
+    whether it runs 100&ndash;200&nbsp;Hz or 5&ndash;10&nbsp;kHz. A linear axis crushes every
+    musically interesting partial into the bottom few pixels and devotes most of
+    the canvas to air.
+  </p>
+
+  <h3>Colour carries frequency</h3>
+  <p>
+    The spectral ramp &mdash; violet through cyan to amber &mdash; maps to register. A
+    track's colour tells you roughly where it sits before you read its label,
+    which is what makes a 40-row stack scannable. The residual is deliberately
+    <strong>neutral grey</strong>: it has no single frequency, and colouring it would imply
+    one.
+  </p>
+
+  <h3>Drawing cheaply</h3>
+  <p>
+    Never draw more points than the canvas has pixels. Downsample by min/max per
+    column. The server already sends display-resolution trajectories (section 5)
+    precisely so the client is not doing this work on megabytes it did not need.
+  </p>
+
+  <h3>Row anatomy</h3>
+<pre><code>[ M ][ S ]  A3 +4c + 6 harm.  |&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;&#9585;|  [wav] [mid]
+ <span class="c-dim">mute solo    label, note-named    trajectory       export</span></code></pre>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s9">
+  <h2><span class="n">09</span>Playback</h2>
+  <p class="section-blurb">Where the architecture's browser/server split is decided.</p>
+
+  <h3>The approach</h3>
+  <p>
+    The server renders each track to PCM. The browser decodes them into
+    <code>AudioBuffer</code>s and schedules every source at <strong>one shared
+    <code>AudioContext</code> timestamp</strong>:
+  </p>
+
+<pre><code><span class="c-key">const</span> startAt = ctx.currentTime + LOOKAHEAD;
+sources.forEach(s =&gt; s.start(startAt, offset));</code></pre>
+
+  <p>
+    The audio thread honours that timestamp to the sample. Two hundred tracks
+    start on exactly the same sample, every time, regardless of what the main
+    thread is doing. Sync is not something we maintain &mdash; it is something we get.
+  </p>
+
+  <h3>Mute and solo are gain, never transport</h3>
+  <p>
+    Muting sets a <code>GainNode</code> to zero over a 15&nbsp;ms ramp. The source keeps
+    playing silently, stays in sync, and unmutes instantly. Stopping and
+    restarting sources to mute would resynchronise everything and click &mdash; and
+    would make solo feel laggy in exactly the moment users are A/B-ing.
+  </p>
+
+  <div class="callout">
+    <p class="callout-label">Why this keeps the promise</p>
+    <p>
+      The backend guarantees <code>&Sigma;tracks == original</code>. Playback is a sample-aligned
+      sum of those same buffers at unity gain. So &ldquo;unmute everything&rdquo; reproduces
+      the upload exactly &mdash; the claim is kept by arithmetic rather than by careful
+      mixing.
+    </p>
+  </div>
+
+  <h3>Rejected: client-side oscillator bank</h3>
+  <p>
+    Synthesising partials live in the browser with <code>OscillatorNode</code>s was the
+    obvious alternative and is worse on three counts. Two hundred oscillators
+    each carrying per-partial frequency and gain automation curves is fragile
+    under load; the automation timing is not sample-exact, so the mix would only
+    <em>approximately</em> equal the original &mdash; abandoning section 7's whole point; and
+    it duplicates the renderer in a second language, so the two would drift.
+  </p>
+
+  <h3>Memory</h3>
+  <p>
+    200 tracks &times; 30 s &times; 44.1 kHz &times; 4 bytes &asymp; <strong>1.06 GB</strong> decoded. Not
+    acceptable. Mitigations, in order:
+  </p>
+  <ol>
+    <li><strong>Fetch on demand.</strong> Only decode a track's audio when it is first unmuted. The common case touches a handful.</li>
+    <li><strong>Mixdown for &ldquo;play all&rdquo;.</strong> Serve one pre-mixed buffer for the everything-on case &mdash; which is the original file, so it costs nothing to produce.</li>
+    <li><strong>Evict least-recently-unmuted</strong> above a configured ceiling.</li>
+  </ol>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s10">
+  <h2><span class="n">10</span>Export</h2>
+  <p class="section-blurb">One lossless path and one lossy one. The lossy one is documented as lossy.</p>
+
+  <h3>10.1 &nbsp;WAV &mdash; lossless</h3>
+  <p>
+    A track's rendered audio is already exactly what the user heard when they
+    soloed it, so exporting is a write. The only decision is bit depth: 24-bit
+    PCM by default (what DAWs expect, ample headroom, half the size of float),
+    with 32-bit float offered for users who intend to re-sum the tracks and want
+    the original's samples back bit for bit.
+  </p>
+
+  <h3>10.2 &nbsp;MIDI &mdash; lossy, and here is exactly how</h3>
+  <p>
+    A partial is a continuous curve of frequency and amplitude. MIDI is discrete
+    events on a 12-tone grid. Converting one to the other <em>must</em> discard
+    information. The job is to discard as little as possible and be honest about
+    the rest.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Partial property</th><th>MIDI representation</th><th>Fidelity</th></tr></thead>
+    <tbody>
+      <tr><td>Frequency</td><td>Note number + pitch bend</td><td>Excellent within bend range</td></tr>
+      <tr><td>Amplitude (initial)</td><td>Note-on velocity</td><td>7-bit, quantised</td></tr>
+      <tr><td>Amplitude (over time)</td><td>CC 11 expression, every 20 ms</td><td>Good; 7-bit steps</td></tr>
+      <tr><td>Lifetime</td><td>Note-on / note-off</td><td>Exact to tick resolution</td></tr>
+      <tr><td>Phase</td><td>&mdash;</td><td>Discarded entirely</td></tr>
+      <tr><td>Timbre</td><td>&mdash;</td><td>N/A &mdash; a partial is a sine</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout is-warn">
+    <p class="callout-label">The trap that silently breaks MIDI export</p>
+    <p>
+      Pitch bend range is a <strong>per-channel setting that defaults to &plusmn;2
+      semitones</strong>. A partial sweeping an octave clips at the limit and comes out
+      wrong &mdash; with no error, just a file that sounds incorrect. So on every
+      channel we use, emit the RPN&nbsp;0 sequence to widen the range to
+      &plusmn;48 semitones <em>before anything else</em>. Forgetting this is the single most
+      common way this feature ships broken.
+    </p>
+  </div>
+
+  <p>Set the range to &plusmn;2 below and watch a glide clip:</p>
+
+  <!-- WIDGET 6 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h3>MIDI mapping &mdash; what survives, what clips</h3>
+      <span class="tag">Live</span>
+    </div>
+    <div class="panel-body">
+      <canvas id="w6-canvas" height="230" aria-label="A partial glide overlaid with its MIDI pitch-bend representation"></canvas>
+      <div class="controls">
+        <div class="ctl" style="flex:1 1 220px">
+          <label for="w6-range">Pitch bend range <span class="v" id="w6-range-v">&plusmn;48 semitones</span></label>
+          <input type="range" id="w6-range" min="0" max="3" step="1" value="3">
+        </div>
+        <button class="btn" id="w6-quant" type="button" aria-pressed="false">Show semitone quantising</button>
+      </div>
+      <div class="readout">
+        <div><span class="k">Glide spans</span><span class="val">440 &rarr; 880 Hz</span></div>
+        <div><span class="k">Max bend needed</span><span class="val">1200 cents</span></div>
+        <div><span class="k">Representable</span><span class="val" id="w6-cover">100%</span></div>
+        <div><span class="k">Status</span><span class="val good" id="w6-status">clean</span></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i>true partial</span>
+        <span><i style="background:var(--spec-4)"></i>MIDI reconstruction</span>
+        <span><i style="background:var(--danger)"></i>clipped</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>10.3 &nbsp;The 16-channel wall</h3>
+  <p>
+    Pitch bend applies to a whole channel, not to one note. Two tracks sharing a
+    channel bend each other. MIDI has 16 channels; we routinely have 200 tracks.
+    They cannot coexist in one file.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Export mode</th><th>Output</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Per track (default)</td><td>One <code>.mid</code> per track</td><td>Unambiguous, unlimited, imports correctly everywhere</td></tr>
+      <tr><td>Bundle</td><td>One <code>.zip</code> of per-track files</td><td>Convenience wrapper on the above</td></tr>
+      <tr><td>MPE-style</td><td>One multi-channel <code>.mid</code></td><td>Top 15 tracks by energy. Channel 10 skipped &mdash; GM percussion. <strong>Must report what was omitted.</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>
+    The residual is not MIDI-exportable at all. It is broadband noise; writing it
+    as notes would be fabricating information rather than converting it.
+    <code>Track.is_exportable_as_midi</code> returns <code>False</code> and the UI disables the button
+    rather than failing after the click.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s11">
+  <h2><span class="n">11</span>API surface</h2>
+  <p class="section-blurb">Small, and shaped by the fact that analysis takes seconds.</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>POST</td><td>/api/analyze</td><td>Upload audio &rarr; <code>{job_id}</code></td></tr>
+      <tr><td>GET</td><td>/api/jobs/{id}</td><td>Status and progress</td></tr>
+      <tr><td>WS</td><td>/api/jobs/{id}/events</td><td>Live progress stream</td></tr>
+      <tr><td>GET</td><td>/api/jobs/{id}/tracks</td><td>Track metadata, no audio</td></tr>
+      <tr><td>GET</td><td>/api/tracks/{id}/audio</td><td>Rendered PCM for playback</td></tr>
+      <tr><td>GET</td><td>/api/tracks/{id}/export</td><td><code>?format=wav|mid</code> &rarr; file</td></tr>
+      <tr><td>GET</td><td>/api/jobs/{id}/export</td><td><code>?format=wav|mid</code> &rarr; zip bundle</td></tr>
+      <tr><td>GET</td><td>/api/health</td><td>Liveness</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>11.1 &nbsp;Why a job, not a synchronous response</h3>
+  <p>
+    Analysing 20 seconds takes seconds, not milliseconds. Holding an HTTP request
+    open for that is fragile &mdash; proxies time out &mdash; and gives the user nothing to
+    look at. A job id plus a progress socket costs a little plumbing and makes
+    the wait legible.
+  </p>
+
+  <h3>11.2 &nbsp;Progress weights</h3>
+  <p>Roughly proportional to observed cost on a 20-second phrase:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Stage</th><th class="num">Weight</th><th>Reported as</th></tr></thead>
+    <tbody>
+      <tr><td>Peak finding</td><td class="num">0.30</td><td>&ldquo;Finding tones&rdquo;</td></tr>
+      <tr><td>Tracking</td><td class="num">0.25</td><td>&ldquo;Following tones through time&rdquo;</td></tr>
+      <tr><td>Grouping</td><td class="num">0.05</td><td>&ldquo;Grouping harmonics&rdquo;</td></tr>
+      <tr><td>Rendering</td><td class="num">0.35</td><td>&ldquo;Rendering tracks&rdquo;</td></tr>
+      <tr><td>Residual</td><td class="num">0.05</td><td>&ldquo;Finishing&rdquo;</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>
+    Stage names are written for the user, not the developer. Someone waiting on a
+    progress bar wants to know what is happening to <em>their sound</em>, not which
+    module holds the GIL.
+  </p>
+
+  <h3>11.3 &nbsp;Job store</h3>
+  <p>
+    In-memory with TTL expiry, deliberately not a database. Analyses are
+    ephemeral by design (section 13): a session's audio is user data we have no
+    reason to retain. Jobs run in a background thread while the event loop keeps
+    serving, so every mutation is lock-guarded &mdash; getting that wrong yields the
+    worst class of bug here: intermittent, unreproducible, load-dependent.
+  </p>
+  <p>
+    If multi-worker deployment ever becomes necessary, <code>InMemoryJobStore</code> is the
+    seam: implement <code>JobStore</code> against Redis and change one line of wiring.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s12">
+  <h2><span class="n">12</span>Testing</h2>
+  <p class="section-blurb">Target 90% line coverage. One test matters more than all the others.</p>
+
+  <h3>12.1 &nbsp;Test the theory, not just the code</h3>
+  <p>
+    Synthetic signals with exactly known content, so a failure implicates the
+    analyser rather than the fixture. Real recordings are for judgement, not for
+    assertions.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Fixture</th><th>Expectation</th><th>What a failure means</th></tr></thead>
+    <tbody>
+      <tr><td>Pure 440 Hz sine</td><td>One partial, within 5 cents</td><td>Parabolic interpolation is broken</td></tr>
+      <tr><td>Harmonic complex</td><td>Grouped into one voice</td><td>Grouping is broken</td></tr>
+      <tr><td>White noise</td><td>&gt; 70% energy in residual</td><td>Threshold or tracking is admitting noise as tone</td></tr>
+      <tr><td>Silence</td><td>Exact reconstruction, no NaN</td><td>Degenerate-case handling</td></tr>
+      <tr><td>Vibrato tone</td><td>One partial, not fragments</td><td>Drift or gap tolerance too tight</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>12.2 &nbsp;The invariant assertion</h3>
+  <p>
+    <code>tests/test_reconstruction.py</code> is the acceptance criterion for Phase 2 and a
+    permanent CI gate thereafter. It asserts <code>reconstruction_error() &lt; 1e-6</code> on
+    tonal input, on noise, and on silence.
+  </p>
+  <p>
+    The noise case is the important one. Noise produces few usable partials, so
+    nearly everything lands in the residual &mdash; and the sum must <em>still</em> be exact.
+    That is the test proving the guarantee comes from the subtraction rather than
+    from good analysis.
+  </p>
+
+  <h3>12.3 &nbsp;A test derived from section 2</h3>
+  <p>
+    Because the uncertainty principle predicts that tonal material decomposes
+    into partials and transient material does not, that becomes falsifiable:
+  </p>
+<pre><code><span class="c-key">def</span> test_partial_capture_ranks_tonal_above_noisy():
+    <span class="c-dim">"""The ordering is the claim; thresholds are calibration."""</span>
+    tonal = _verify(make_harmonic_tone(220.0, 8, duration_s=2.0))
+    noisy = _verify(make_noise_burst(duration_s=2.0))
+    <span class="c-key">assert</span> tonal.partial_energy_ratio &gt; noisy.partial_energy_ratio</code></pre>
+  <p>
+    Absolute thresholds drift as parameters are tuned; the <em>ordering</em> is
+    structural. Asserting the relationship rather than the number gives a test
+    that survives tuning and still catches a genuine regression.
+  </p>
+
+  <h3>12.4 &nbsp;Coverage honesty</h3>
+  <p>
+    The scaffold's stub modules are listed in <code>pyproject.toml</code>'s coverage
+    <code>omit</code>, each annotated with its phase. <strong>Delete each line as its phase lands</strong>
+    so the 90% gate tightens automatically instead of being quietly forgotten.
+    24 tests pass today against the implemented domain model.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s13">
+  <h2><span class="n">13</span>Security</h2>
+  <p class="section-blurb">The app accepts file uploads from a browser. Treat it as internet-facing whether or not it ever is.</p>
+
+  <h3>13.1 &nbsp;Threat model</h3>
+  <p>
+    No accounts, no persistence, no secrets held. That narrows the surface a
+    great deal, and leaves three real concerns: <strong>malicious uploads</strong>,
+    <strong>resource exhaustion</strong>, and <strong>information leakage through errors</strong>.
+  </p>
+
+  <h3>13.2 &nbsp;Upload validation, in order</h3>
+  <ol>
+    <li><strong>Size, before reading.</strong> 50 MB ceiling. A 4 GB &ldquo;wav&rdquo; should never reach memory.</li>
+    <li><strong>Magic bytes, not the extension.</strong> An extension is a claim by the uploader; magic bytes are evidence. <code>_MAGIC_SIGNATURES</code> in <code>audio_io/loader.py</code>.</li>
+    <li><strong>Duration, from the header</strong>, before decoding samples. 30-second ceiling.</li>
+    <li><strong>Content.</strong> Reject empty or wholly silent files &mdash; they produce degenerate results and confusing UI.</li>
+    <li><strong>Storage outside the web root</strong>, with generated filenames. User-supplied names are never used on disk.</li>
+  </ol>
+
+  <h3>13.3 &nbsp;Configuration</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Control</th><th>Setting</th></tr></thead>
+    <tbody>
+      <tr><td>CORS</td><td>Explicit origins. <code>Settings</code> raises on a wildcard rather than allowing one</td></tr>
+      <tr><td>CSP</td><td><code>default-src 'self'</code>; no eval beyond <code>wasm-unsafe-eval</code>; <code>frame-ancestors 'none'</code></td></tr>
+      <tr><td>Headers</td><td><code>nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code></td></tr>
+      <tr><td>Rate limiting</td><td>Per-IP on <code>/api/analyze</code> &mdash; the only expensive endpoint</td></tr>
+      <tr><td>TLS</td><td>Required in any deployment beyond localhost</td></tr>
+      <tr><td>Sessions</td><td>Purged after 1 hour. Audio is user data we have no reason to keep</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>13.4 &nbsp;Errors never leak internals</h3>
+  <p>
+    Every exception in <code>backend/core/errors.py</code> carries a <code>user_message</code> written
+    for a person. Exception text &mdash; which contains paths, parameters, and stack
+    frames &mdash; goes to the log and never to the browser. <code>JobStore.fail()</code>
+    documents this explicitly because it is the one place the temptation to pass
+    <code>str(exception)</code> through is strongest.
+  </p>
+
+  <h3>13.5 &nbsp;Supply chain</h3>
+  <p>
+    All dependencies pinned exactly, no floating ranges. Every package was
+    verified present on PyPI at pin time &mdash; a guard against slopsquatting, where a
+    plausible-sounding but nonexistent package name gets registered by an
+    attacker. <code>pip-audit --strict</code> runs in CI and fails the build on any
+    critical or high vulnerability. Licences are all permissive
+    (BSD/ISC/MIT/Apache-2.0), which the open-source goal requires.
+  </p>
+
+  <h3>13.6 &nbsp;Not applicable</h3>
+  <p>
+    No AI or LLM components, so the agentic-security considerations do not apply.
+    No database, so no injection surface. No authentication, so no broken access
+    control &mdash; but note that this is <em>because</em> there is no per-user data; adding
+    accounts later would reopen the whole category.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section id="s14">
+  <h2><span class="n">14</span>Phases and open questions</h2>
+  <p class="section-blurb">What exists, what is next, and what is genuinely undecided.</p>
+
+  <h3>14.1 &nbsp;Build phases</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Phase</th><th>Scope</th><th>Gate</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>Scaffold, domain model, contracts, config, CI</td><td>Tests pass</td><td><span class="status done">Complete</span></td></tr>
+      <tr><td>1</td><td>STFT, peak picking, tracking, loading</td><td>Pure sine recovers within 5 cents</td><td><span class="status done">Complete</span></td></tr>
+      <tr><td>2</td><td>Grouping, resynthesis, residual, pipeline</td><td><strong>Reconstruction exact on all fixtures</strong></td><td><span class="status done">Complete</span></td></tr>
+      <tr><td>3</td><td>WAV and MIDI export</td><td>Glide exports with correct RPN bend range</td><td><span class="status done">Complete</span></td></tr>
+      <tr><td>4</td><td>API routes, job store, progress socket</td><td>Upload analyses without timeout</td><td><span class="status done">Complete</span></td></tr>
+      <tr><td>5</td><td>Frontend: transport, canvas, workbench</td><td>Tracks play in sync; solo is instant</td><td><span class="status done">Complete</span></td></tr>
+      <tr><td>6</td><td>Double-clickable <code>FourierPartial.app</code></td><td>Launches, waits for health, opens browser</td><td><span class="status done">Complete</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>14.2 &nbsp;Open questions</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Question</th><th>Current position</th><th>Decide by</th></tr></thead>
+    <tbody>
+      <tr><td>Stereo analysis?</td><td>Mono for now. Doubles partial count and adds phase-cancellation bugs</td><td>After Phase 2 &mdash; depends on how the count behaves in practice</td></tr>
+      <tr><td>Is 200 tracks the right ceiling?</td><td>Guess, not a measurement</td><td>Phase 5, from real use</td></tr>
+      <tr><td>Cubic phase interpolation?</td><td>Linear first. Measure before adding complexity</td><td>Phase 2, if artefacts appear</td></tr>
+      <tr><td>Onset-time grouping cue?</td><td>Would fix the octave-merge weakness in section 6</td><td>Phase 2b, if octaves prove a common complaint</td></tr>
+      <tr><td>Longer files?</td><td>Out of scope. Needs streaming analysis, culling, and a different UI</td><td>Post-1.0, as a separate design</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>14.3 &nbsp;Deployment</h3>
+  <p>
+    Local-first: <code>python3 -m backend.main</code>, preferred port 8420, auto-selecting
+    if busy. For a hosted demo, any container host works &mdash; the app is stateless
+    apart from the TTL job store. The constraint is CPU and RAM per analysis, not
+    concurrency, so a small always-on instance beats serverless, where cold
+    starts and execution limits fit this workload badly.
+  </p>
+
+  <h3>14.4 &nbsp;What would make this fail</h3>
+  <p>Recorded honestly, so the risks are visible rather than discovered:</p>
+  <ul>
+    <li><strong>Track counts are unusable in practice.</strong> Grouping is the mitigation and it is unproven on real polyphony. This is the highest risk in the project.</li>
+    <li><strong>Rendering is too slow.</strong> 400 partials &times; 882k samples has an unpleasant constant factor. Inverse-FFT overlap-add is the fallback.</li>
+    <li><strong>Soloed partials are less interesting than they sound in theory.</strong> A single sine is a thin thing to listen to. Harmonic groups are the answer, which raises the stakes on grouping quality again.</li>
+    <li><strong>Browser memory on large analyses.</strong> Section 9's mitigations are designed but untested.</li>
+  </ul>
+</section>
+
+<footer class="doc-footer">
+  <p>
+    fourier_partial &mdash; Technical Design Document v1.0 &middot; 2026-08-16 &middot; MIT<br>
+    Scaffold at <code>fourier_partial/</code> &middot; navigation map in <code>NAVIGATION.md</code> &middot;
+    domain model in <code>backend/core/types.py</code><br>
+    Framing after Quanta Magazine on the
+    <a href="https://www.quantamagazine.org/what-is-the-fourier-transform-20250903/" target="_blank" rel="noopener">Fourier transform</a>
+    and the
+    <a href="https://www.quantamagazine.org/graduate-student-proves-the-fractal-uncertainty-principle-20260812/" target="_blank" rel="noopener">fractal uncertainty principle</a>.
+  </p>
+</footer>
+
+</main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // =========================================================================
+  // Shared utilities
+  // =========================================================================
+
+  const css = (name) => getComputedStyle(document.documentElement)
+    .getPropertyValue(name).trim();
+
+  /** Size a canvas for the device pixel ratio and return its 2D context. */
+  function fitCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const h = canvas.getAttribute('height') | 0;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.round(h * dpr);
+    canvas.style.height = h + 'px';
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { g, w: rect.width, h: h };
+  }
+
+  /** In-place iterative radix-2 FFT. Arrays must be power-of-two length. */
+  function fft(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        let t = re[i]; re[i] = re[j]; re[j] = t;
+        t = im[i]; im[i] = im[j]; im[j] = t;
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len;
+      const wr = Math.cos(ang), wi = Math.sin(ang);
+      const half = len >> 1;
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < half; k++) {
+          const ur = re[i + k], ui = im[i + k];
+          const xr = re[i + k + half], xi = im[i + k + half];
+          const vr = xr * cr - xi * ci;
+          const vi = xr * ci + xi * cr;
+          re[i + k] = ur + vr; im[i + k] = ui + vi;
+          re[i + k + half] = ur - vr; im[i + k + half] = ui - vi;
+          const ncr = cr * wr - ci * wi;
+          ci = cr * wi + ci * wr;
+          cr = ncr;
+        }
+      }
+    }
+  }
+
+  function hann(n) {
+    const w = new Float64Array(n);
+    for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n);
+    return w;
+  }
+
+  const cents = (a, b) => 1200 * Math.log2(a / b);
+
+  /** Lazily created shared AudioContext — browsers require a user gesture. */
+  let audioCtx = null;
+  function getAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  /** Colour for a frequency, following the document's spectral ramp. */
+  function specColor(hz) {
+    const ramp = ['--spec-0','--spec-1','--spec-2','--spec-3','--spec-4','--spec-5'];
+    const t = Math.max(0, Math.min(1,
+      Math.log2(Math.max(20, hz) / 20) / Math.log2(20000 / 20)));
+    return css(ramp[Math.min(ramp.length - 1, Math.floor(t * ramp.length))]);
+  }
+
+  const redraws = [];
+  function register(fn) { redraws.push(fn); fn(); }
+  function redrawAll() { redraws.forEach((f) => f()); }
+
+  window.addEventListener('resize', redrawAll);
+
+  // =========================================================================
+  // Theme toggle
+  // =========================================================================
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const root = document.documentElement;
+    const explicit = root.getAttribute('data-theme');
+    let dark;
+    if (explicit) dark = explicit === 'dark';
+    else dark = !window.matchMedia('(prefers-color-scheme: light)').matches;
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    redrawAll();
+  });
+
+  // =========================================================================
+  // Contents rail — highlight the section in view
+  // =========================================================================
+
+  const links = Array.from(document.querySelectorAll('#toc a'));
+  const sections = links
+    .map((a) => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+
+  if ('IntersectionObserver' in window) {
+    const seen = new Set();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) seen.add(e.target.id); else seen.delete(e.target.id);
+      });
+      const first = sections.find((s) => seen.has(s.id));
+      links.forEach((a) => a.classList.toggle(
+        'is-current', !!first && a.getAttribute('href') === '#' + first.id));
+    }, { rootMargin: '-10% 0px -75% 0px' });
+    sections.forEach((s) => io.observe(s));
+  }
+
+  // =========================================================================
+  // WIDGET 1 — Additive synthesis
+  // =========================================================================
+
+  (function additive() {
+    const N_HARM = 10;
+    const F0 = 110;
+    const amps = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const canvas = document.getElementById('w1-canvas');
+    const grid = document.getElementById('w1-sliders');
+    const playBtn = document.getElementById('w1-play');
+
+    let nodes = null;
+
+    grid.innerHTML = '';
+    const inputs = [];
+    for (let n = 1; n <= N_HARM; n++) {
+      const wrap = document.createElement('div');
+      wrap.className = 'ctl';
+      const id = 'w1-h' + n;
+      wrap.innerHTML =
+        '<label for="' + id + '">H' + n + ' <span class="v" id="' + id + '-v">0.00</span></label>' +
+        '<input type="range" id="' + id + '" min="0" max="100" step="1" value="' +
+        Math.round(amps[n - 1] * 100) + '">';
+      grid.appendChild(wrap);
+      const input = wrap.querySelector('input');
+      inputs.push(input);
+      input.addEventListener('input', () => {
+        amps[n - 1] = input.value / 100;
+        document.getElementById(id + '-v').textContent = amps[n - 1].toFixed(2);
+        draw();
+        retune();
+      });
+    }
+
+    function syncInputs() {
+      inputs.forEach((input, i) => {
+        input.value = Math.round(amps[i] * 100);
+        document.getElementById(input.id + '-v').textContent = amps[i].toFixed(2);
+      });
+    }
+
+    function sample(t) {
+      let y = 0;
+      for (let n = 1; n <= N_HARM; n++) y += amps[n - 1] * Math.sin(2 * Math.PI * n * t);
+      return y;
+    }
+
+    function draw() {
+      const { g, w, h } = fitCanvas(canvas);
+      g.clearRect(0, 0, w, h);
+
+      // Zero line
+      g.strokeStyle = css('--rule');
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+
+      // Peak-normalise for display only, so the shape stays readable.
+      let peak = 0;
+      for (let i = 0; i <= 400; i++) peak = Math.max(peak, Math.abs(sample(i / 200)));
+      const scale = peak > 0 ? (h * 0.40) / peak : 0;
+
+      g.strokeStyle = css('--accent');
+      g.lineWidth = 1.8;
+      g.beginPath();
+      for (let px = 0; px <= w; px++) {
+        const t = (px / w) * 2;               // two periods
+        const y = h / 2 - sample(t) * scale;
+        px === 0 ? g.moveTo(px, y) : g.lineTo(px, y);
+      }
+      g.stroke();
+
+      g.fillStyle = css('--ink-faint');
+      g.font = '10px ' + css('--font-mono');
+      g.fillText('two periods of 110 Hz', 8, 14);
+    }
+
+    function retune() {
+      if (!nodes) return;
+      const ctx = getAudio();
+      nodes.gains.forEach((gain, i) => {
+        gain.gain.setTargetAtTime(amps[i] * 0.10, ctx.currentTime, 0.02);
+      });
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (nodes) {
+        nodes.gains.forEach((g) => g.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02));
+        const dying = nodes;
+        setTimeout(() => dying.oscs.forEach((o) => o.stop()), 200);
+        nodes = null;
+        playBtn.setAttribute('aria-pressed', 'false');
+        playBtn.textContent = 'Play';
+        return;
+      }
+      const ctx = getAudio();
+      const oscs = [], gains = [];
+      for (let n = 1; n <= N_HARM; n++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = F0 * n;
+        gain.gain.value = 0;
+        gain.gain.setTargetAtTime(amps[n - 1] * 0.10, ctx.currentTime, 0.02);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        oscs.push(osc); gains.push(gain);
+      }
+      nodes = { oscs, gains };
+      playBtn.setAttribute('aria-pressed', 'true');
+      playBtn.textContent = 'Stop';
+    });
+
+    function preset(fn) {
+      for (let n = 1; n <= N_HARM; n++) amps[n - 1] = fn(n);
+      syncInputs(); draw(); retune();
+    }
+
+    document.getElementById('w1-saw').addEventListener('click', () => preset((n) => 1 / n));
+    document.getElementById('w1-square').addEventListener('click',
+      () => preset((n) => (n % 2 === 1 ? 1 / n : 0)));
+    document.getElementById('w1-sine').addEventListener('click',
+      () => preset((n) => (n === 1 ? 1 : 0)));
+    document.getElementById('w1-clear').addEventListener('click', () => preset(() => 0));
+
+    syncInputs();
+    register(draw);
+  }());
+
+  // =========================================================================
+  // WIDGET 2 — Sub-bin peak picking
+  // =========================================================================
+
+  (function peakPicking() {
+    const SR = 44100;
+    const N = 4096;
+    const win = hann(N);
+    const canvas = document.getElementById('w2-canvas');
+    const slider = document.getElementById('w2-freq');
+
+    function spectrum(f0) {
+      const re = new Float64Array(N), im = new Float64Array(N);
+      for (let i = 0; i < N; i++) re[i] = Math.sin(2 * Math.PI * f0 * i / SR) * win[i];
+      fft(re, im);
+      const mag = new Float64Array(N / 2);
+      for (let k = 0; k < N / 2; k++) mag[k] = Math.hypot(re[k], im[k]);
+      return mag;
+    }
+
+    function draw() {
+      const f0 = slider.value / 10;
+      document.getElementById('w2-freq-v').textContent = f0.toFixed(1) + ' Hz';
+
+      const mag = spectrum(f0);
+      const binHz = SR / N;
+
+      // Locate the peak bin.
+      let peak = 1;
+      for (let k = 2; k < mag.length - 1; k++) if (mag[k] > mag[peak]) peak = k;
+
+      // Parabolic interpolation, in dB.
+      const db = (x) => 20 * Math.log10(Math.max(x, 1e-12));
+      const L = db(mag[peak - 1]), C = db(mag[peak]), R = db(mag[peak + 1]);
+      const denom = L - 2 * C + R;
+      const offset = Math.abs(denom) < 1e-12 ? 0 : 0.5 * (L - R) / denom;
+
+      const binEst = peak * binHz;
+      const parEst = (peak + offset) * binHz;
+
+      document.getElementById('w2-bin').textContent = binEst.toFixed(1) + ' Hz';
+      document.getElementById('w2-par').textContent = parEst.toFixed(1) + ' Hz';
+      const be = cents(binEst, f0), pe = cents(parEst, f0);
+      document.getElementById('w2-bin-err').textContent =
+        (be >= 0 ? '+' : '') + be.toFixed(0) + ' cents';
+      document.getElementById('w2-par-err').textContent =
+        (pe >= 0 ? '+' : '') + pe.toFixed(1) + ' cents';
+
+      // --- Draw ---
+      const { g, w, h } = fitCanvas(canvas);
+      g.clearRect(0, 0, w, h);
+      const pad = { l: 8, r: 8, t: 16, b: 26 };
+      const lo = peak - 5, hi = peak + 5;
+      const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+      const xOf = (bin) => pad.l + ((bin - lo) / (hi - lo)) * plotW;
+      const maxMag = mag[peak];
+      const yOf = (m) => pad.t + plotH - (m / maxMag) * plotH;
+
+      // Baseline
+      g.strokeStyle = css('--rule');
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(0, pad.t + plotH); g.lineTo(w, pad.t + plotH); g.stroke();
+
+      // Bin stems
+      g.font = '9px ' + css('--font-mono');
+      for (let k = lo; k <= hi; k++) {
+        const x = xOf(k), y = yOf(mag[k]);
+        const isPeak = k === peak;
+        g.strokeStyle = isPeak ? css('--danger') : css('--ink-faint');
+        g.lineWidth = isPeak ? 2 : 1;
+        g.beginPath(); g.moveTo(x, pad.t + plotH); g.lineTo(x, y); g.stroke();
+        g.fillStyle = isPeak ? css('--danger') : css('--ink-faint');
+        g.beginPath(); g.arc(x, y, isPeak ? 3.5 : 2.5, 0, 6.284); g.fill();
+        if (k % 2 === 0) {
+          g.fillStyle = css('--ink-faint');
+          g.fillText((k * binHz).toFixed(0), x - 12, h - 10);
+        }
+      }
+
+      // Fitted parabola through the three dB points, drawn in linear space.
+      g.strokeStyle = css('--spec-3');
+      g.lineWidth = 1.5;
+      g.setLineDash([3, 3]);
+      // Parabola through (-1,L), (0,C), (1,R):  y(d) = a·d² + b·d + C
+      const pa = denom / 2, pb = (R - L) / 2;
+      const parabolaDb = (d) => pa * d * d + pb * d + C;
+
+      g.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const d = -1 + (i / 60) * 2;
+        const linear = Math.pow(10, parabolaDb(d) / 20);
+        const x = xOf(peak + d);
+        const y = yOf(Math.max(0, Math.min(maxMag * 1.06, linear)));
+        i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.stroke();
+      g.setLineDash([]);
+
+      // Parabola vertex — the sub-bin estimate
+      const vertexMag = Math.min(maxMag * 1.06,
+        Math.pow(10, parabolaDb(offset) / 20));
+      g.fillStyle = css('--spec-3');
+      g.beginPath(); g.arc(xOf(peak + offset), yOf(vertexMag), 4, 0, 6.284); g.fill();
+
+      // True frequency
+      const tx = xOf(f0 / binHz);
+      g.strokeStyle = css('--accent');
+      g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(tx, pad.t - 6); g.lineTo(tx, pad.t + plotH); g.stroke();
+
+      g.fillStyle = css('--ink-faint');
+      g.font = '10px ' + css('--font-mono');
+      g.fillText('bin frequency (Hz)', pad.l, 12);
+    }
+
+    slider.addEventListener('input', draw);
+    register(draw);
+  }());
+
+  // =========================================================================
+  // WIDGET 3 — Partial tracking animation
+  // =========================================================================
+
+  (function tracking() {
+    const canvas = document.getElementById('w3-canvas');
+    const N_FRAMES = 90;
+    const FRAME_MS = 11.6;   // matches hop 512 @ 44.1 kHz
+    const MIN_MS = 50;
+
+    // Three synthetic sources plus scattered noise peaks.
+    function truePeaks(frame) {
+      const t = frame / N_FRAMES;
+      const out = [];
+      // 1. Steady tone, present throughout.
+      out.push({ f: 440, a: 0.9, src: 0 });
+      // 2. Vibrato tone that is masked around frames 40-43.
+      if (!(frame >= 40 && frame <= 42)) {
+        out.push({ f: 660 * Math.pow(2, 0.04 * Math.sin(frame * 0.45)), a: 0.7, src: 1 });
+      }
+      // 3. Glide that starts late and dies early.
+      if (frame > 18 && frame < 74) {
+        out.push({ f: 880 * Math.pow(2, (frame - 18) / 120), a: 0.6, src: 2 });
+      }
+      // 4. Noise: short-lived spurious peaks.
+      const seed = (frame * 9301 + 49297) % 233280;
+      if (seed / 233280 > 0.55) {
+        out.push({ f: 300 + (seed % 1400), a: 0.22, src: 3 });
+      }
+      return out;
+    }
+
+    let playing = false, cursor = 0, raf = null;
+
+    function build(upto) {
+      const gapTol = +document.getElementById('w3-gap').value;
+      const driftTol = +document.getElementById('w3-drift').value;
+      const partials = [];   // {pts:[{frame,f}], lastFrame, alive}
+
+      for (let frame = 0; frame < upto; frame++) {
+        const peaks = truePeaks(frame);
+        const claimed = new Set();
+        // CONTINUE: match live partials to peaks, nearest in cents first.
+        partials.forEach((p, pi) => {
+          if (!p.alive) return;
+          if (frame - p.lastFrame > gapTol + 1) { p.alive = false; return; }
+          let best = -1, bestCost = Infinity;
+          peaks.forEach((pk, ki) => {
+            if (claimed.has(ki)) return;
+            const cost = Math.abs(cents(pk.f, p.pts[p.pts.length - 1].f));
+            if (cost < driftTol && cost < bestCost) { bestCost = cost; best = ki; }
+          });
+          if (best >= 0) {
+            claimed.add(best);
+            p.pts.push({ frame: frame, f: peaks[best].f, a: peaks[best].a });
+            p.lastFrame = frame;
+          }
+        });
+        // BIRTH: any unclaimed peak starts a partial.
+        peaks.forEach((pk, ki) => {
+          if (claimed.has(ki)) return;
+          partials.push({
+            pts: [{ frame: frame, f: pk.f, a: pk.a }],
+            lastFrame: frame, alive: true, born: frame
+          });
+        });
+      }
+      return partials;
+    }
+
+    function draw() {
+      const partials = build(playing || cursor > 0 ? cursor : N_FRAMES);
+      const { g, w, h } = fitCanvas(canvas);
+      g.clearRect(0, 0, w, h);
+
+      const pad = { l: 44, r: 10, t: 14, b: 24 };
+      const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+      const F_LO = 250, F_HI = 2600;
+      const xOf = (fr) => pad.l + (fr / N_FRAMES) * plotW;
+      const yOf = (f) => pad.t + plotH -
+        (Math.log2(f / F_LO) / Math.log2(F_HI / F_LO)) * plotH;
+
+      // Frequency gridlines
+      g.font = '9px ' + css('--font-mono');
+      [300, 600, 1200, 2400].forEach((f) => {
+        const y = yOf(f);
+        g.strokeStyle = css('--rule-soft');
+        g.lineWidth = 1;
+        g.beginPath(); g.moveTo(pad.l, y); g.lineTo(w - pad.r, y); g.stroke();
+        g.fillStyle = css('--ink-faint');
+        g.fillText(f + ' Hz', 4, y + 3);
+      });
+
+      let born = 0, kept = 0, dropped = 0;
+
+      partials.forEach((p) => {
+        born++;
+        const durMs = (p.pts[p.pts.length - 1].frame - p.pts[0].frame + 1) * FRAME_MS;
+        const survives = durMs >= MIN_MS;
+        survives ? kept++ : dropped++;
+
+        const colour = survives ? specColor(p.pts[0].f) : css('--ink-faint');
+        g.strokeStyle = colour;
+        g.globalAlpha = survives ? 0.95 : 0.4;
+        g.lineWidth = survives ? 2 : 1;
+        g.beginPath();
+        p.pts.forEach((pt, i) => {
+          const x = xOf(pt.frame), y = yOf(pt.f);
+          i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+        });
+        g.stroke();
+
+        // Birth marker
+        g.globalAlpha = 1;
+        g.fillStyle = colour;
+        g.beginPath();
+        g.arc(xOf(p.pts[0].frame), yOf(p.pts[0].f), survives ? 3 : 2, 0, 6.284);
+        g.fill();
+      });
+      g.globalAlpha = 1;
+
+      // Scan line
+      if (playing || cursor > 0) {
+        const x = xOf(Math.min(cursor, N_FRAMES));
+        g.strokeStyle = css('--accent');
+        g.lineWidth = 1;
+        g.beginPath(); g.moveTo(x, pad.t); g.lineTo(x, pad.t + plotH); g.stroke();
+      }
+
+      g.fillStyle = css('--ink-faint');
+      g.fillText('time →', pad.l, h - 8);
+
+      document.getElementById('w3-born').textContent = born;
+      document.getElementById('w3-kept').textContent = kept;
+      document.getElementById('w3-dropped').textContent = dropped;
+    }
+
+    function tick() {
+      if (!playing) return;
+      cursor += 1;
+      if (cursor >= N_FRAMES) { cursor = N_FRAMES; playing = false;
+        document.getElementById('w3-play').textContent = 'Run'; }
+      draw();
+      if (playing) raf = requestAnimationFrame(tick);
+    }
+
+    document.getElementById('w3-play').addEventListener('click', (e) => {
+      if (playing) { playing = false; e.target.textContent = 'Run'; return; }
+      if (cursor >= N_FRAMES) cursor = 0;
+      playing = true;
+      e.target.textContent = 'Pause';
+      raf = requestAnimationFrame(tick);
+    });
+
+    document.getElementById('w3-reset').addEventListener('click', () => {
+      playing = false; cursor = 0;
+      document.getElementById('w3-play').textContent = 'Run';
+      if (raf) cancelAnimationFrame(raf);
+      draw();
+    });
+
+    document.getElementById('w3-gap').addEventListener('input', (e) => {
+      document.getElementById('w3-gap-v').textContent =
+        e.target.value + (e.target.value === '1' ? ' frame' : ' frames');
+      draw();
+    });
+    document.getElementById('w3-drift').addEventListener('input', (e) => {
+      document.getElementById('w3-drift-v').textContent = e.target.value + ' cents';
+      draw();
+    });
+
+    register(draw);
+  }());
+
+  // =========================================================================
+  // WIDGET 4 — Window size / uncertainty
+  // =========================================================================
+
+  (function uncertainty() {
+    // Real system rate and real window sizes — no scaling fudge, so the
+    // numbers on screen are the numbers section 4 specifies.
+    const SR = 44100;
+    const DUR = 1.0;
+    const SIZES = [512, 1024, 2048, 4096, 8192, 16384];
+    const canvas = document.getElementById('w4-canvas');
+    const slider = document.getElementById('w4-window');
+
+    // Two tones 15 Hz apart, plus one click at t = 0.5.
+    const sig = new Float64Array(Math.round(SR * DUR));
+    for (let i = 0; i < sig.length; i++) {
+      const t = i / SR;
+      sig[i] = 0.5 * Math.sin(2 * Math.PI * 400 * t)
+             + 0.5 * Math.sin(2 * Math.PI * 415 * t);
+    }
+    const clickAt = Math.round(SR * 0.5);
+    for (let i = 0; i < 8; i++) sig[clickAt + i] += 3.0 * (1 - i / 8);
+
+    function draw() {
+      const N = SIZES[+slider.value];
+      const hop = Math.max(8, N >> 2);
+      const win = hann(N);
+      const frames = Math.max(1, Math.floor((sig.length - N) / hop) + 1);
+
+      const F_MAX = 700;
+      const binHz = SR / N;
+      const nBins = Math.min(N >> 1, Math.ceil(F_MAX / binHz));
+
+      const grid = [];
+      let peakMag = 1e-9;
+      for (let f = 0; f < frames; f++) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        const off = f * hop;
+        for (let i = 0; i < N; i++) re[i] = sig[off + i] * win[i];
+        fft(re, im);
+        const col = new Float64Array(nBins);
+        for (let k = 0; k < nBins; k++) {
+          col[k] = Math.hypot(re[k], im[k]) / N;
+          if (col[k] > peakMag) peakMag = col[k];
+        }
+        grid.push(col);
+      }
+
+      const { g, w, h } = fitCanvas(canvas);
+      g.clearRect(0, 0, w, h);
+      const pad = { l: 46, r: 130, t: 14, b: 24 };
+      const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+
+      const cw = plotW / frames, ch = plotH / nBins;
+      const ramp = ['--spec-0','--spec-1','--spec-2','--spec-3','--spec-4','--spec-5'];
+      for (let f = 0; f < frames; f++) {
+        for (let k = 0; k < nBins; k++) {
+          const v = grid[f][k] / peakMag;
+          if (v < 0.006) continue;
+          // Strong compression: a click spreads its energy across every bin,
+          // so its per-bin magnitude is tiny even when it is plainly audible.
+          const t = Math.min(1, Math.pow(v, 0.28));
+          g.globalAlpha = Math.min(1, t * 1.1);
+          g.fillStyle = css(ramp[Math.min(5, Math.floor(t * 6))]);
+          g.fillRect(pad.l + f * cw, pad.t + plotH - (k + 1) * ch,
+                     Math.max(1, cw + 0.6), Math.max(1, ch + 0.6));
+        }
+      }
+      g.globalAlpha = 1;
+
+      // Axes
+      g.font = '9px ' + css('--font-mono');
+      g.fillStyle = css('--ink-faint');
+      [0, 200, 400, 600].forEach((f) => {
+        const y = pad.t + plotH - (f / (nBins * binHz)) * plotH;
+        if (y < pad.t || y > pad.t + plotH) return;
+        g.fillText(f + ' Hz', 4, y + 3);
+      });
+      g.fillText('time →', pad.l, h - 8);
+      g.fillText('click at 0.5 s', pad.l + plotW * 0.5 - 22, pad.t + plotH + 14);
+
+      // --- Uncertainty box: constant area, changing aspect ---
+      const bx = w - pad.r + 20, by = pad.t + 24, bw = 86, bh = 110;
+      g.strokeStyle = css('--rule');
+      g.lineWidth = 1;
+      g.strokeRect(bx, by, bw, bh);
+      g.fillStyle = css('--ink-faint');
+      g.fillText('uncertainty box', bx, by - 8);
+
+      // Aspect follows window length; area is held constant.
+      const rel = Math.log2(N / SIZES[0]) / Math.log2(SIZES[SIZES.length - 1] / SIZES[0]);
+      const AREA = 0.30;
+      const tFrac = 0.12 + rel * 0.76;
+      const fFrac = AREA / tFrac;
+      const rw = Math.min(1, tFrac) * bw, rh = Math.min(1, fFrac) * bh;
+      g.fillStyle = css('--accent');
+      g.globalAlpha = 0.35;
+      g.fillRect(bx + 2, by + bh - rh - 2, rw, rh);
+      g.globalAlpha = 1;
+      g.strokeStyle = css('--accent');
+      g.strokeRect(bx + 2, by + bh - rh - 2, rw, rh);
+      g.fillStyle = css('--ink-faint');
+      g.fillText('Δt', bx + rw / 2, by + bh + 12);
+      g.save();
+      g.translate(bx - 6, by + bh - rh / 2);
+      g.rotate(-Math.PI / 2);
+      g.fillText('Δf', 0, 0);
+      g.restore();
+
+      const winMs = 1000 * N / SR;
+      const resHz = SR / N;
+      document.getElementById('w4-window-v').textContent = N + ' samples';
+      document.getElementById('w4-time').textContent = winMs.toFixed(1) + ' ms';
+      document.getElementById('w4-freq').textContent = resHz.toFixed(1) + ' Hz apart';
+      document.getElementById('w4-product').textContent =
+        ((winMs / 1000) * resHz).toFixed(3);
+
+      const tones = document.getElementById('w4-tones');
+      const click = document.getElementById('w4-click');
+      const separated = resHz < 15;
+      tones.textContent = separated ? 'separated' : 'merged';
+      tones.className = 'val ' + (separated ? 'good' : 'bad');
+      const sharp = winMs < 25;
+      click.textContent = sharp ? 'sharp' : (winMs < 60 ? 'softened' : 'smeared');
+      click.className = 'val ' + (sharp ? 'good' : (winMs < 60 ? 'warn' : 'bad'));
+    }
+
+    slider.addEventListener('input', draw);
+    register(draw);
+  }());
+
+  // =========================================================================
+  // WIDGET 5 — The residual
+  // =========================================================================
+
+  (function residual() {
+    const SR = 22050;
+    const DUR = 1.6;
+    const n = Math.round(SR * DUR);
+
+    // Partials: six harmonics of 196 Hz with a plucked envelope.
+    const partials = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = i / SR;
+      const env = Math.exp(-2.2 * t) * Math.min(1, t / 0.008);
+      let y = 0;
+      for (let k = 1; k <= 6; k++) y += Math.sin(2 * Math.PI * 196 * k * t) / k;
+      partials[i] = 0.34 * env * y;
+    }
+
+    // Noise: a short broadband burst at the attack — the pick, the breath.
+    const noise = new Float32Array(n);
+    let seed = 12345;
+    for (let i = 0; i < n; i++) {
+      const t = i / SR;
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      const r = (seed / 0x7fffffff) * 2 - 1;
+      noise[i] = 0.42 * r * Math.exp(-26 * t);
+    }
+
+    // Original is the sum, so residual := original - partials is exactly noise.
+    const original = new Float32Array(n);
+    for (let i = 0; i < n; i++) original[i] = partials[i] + noise[i];
+
+    const computed = new Float32Array(n);
+    let maxErr = 0;
+    for (let i = 0; i < n; i++) {
+      computed[i] = original[i] - partials[i];
+      maxErr = Math.max(maxErr, Math.abs((partials[i] + computed[i]) - original[i]));
+    }
+
+    const energy = (b) => { let s = 0; for (let i = 0; i < b.length; i++) s += b[i] * b[i]; return s; };
+    const ep = energy(partials), er = energy(computed), et = ep + er;
+
+    document.getElementById('w5-pe').textContent = (100 * ep / et).toFixed(1) + '%';
+    document.getElementById('w5-re').textContent = (100 * er / et).toFixed(1) + '%';
+    document.getElementById('w5-err').textContent = maxErr.toExponential(1);
+    document.getElementById('w5-ok').textContent = maxErr < 1e-6 ? 'exact' : 'DRIFT';
+
+    let live = [];
+    function stop() {
+      live.forEach((s) => { try { s.stop(); } catch (e) { /* already stopped */ } });
+      live = [];
+    }
+
+    function toBuffer(ctx, arr) {
+      const buf = ctx.createBuffer(1, arr.length, SR);
+      buf.copyToChannel(arr, 0);
+      return buf;
+    }
+
+    function play(arrays) {
+      stop();
+      const ctx = getAudio();
+      // All sources scheduled at one timestamp — the same trick as section 9.
+      const at = ctx.currentTime + 0.06;
+      arrays.forEach((arr) => {
+        const src = ctx.createBufferSource();
+        src.buffer = toBuffer(ctx, arr);
+        src.connect(ctx.destination);
+        src.start(at);
+        live.push(src);
+      });
+    }
+
+    document.getElementById('w5-orig').addEventListener('click', () => play([original]));
+    document.getElementById('w5-part').addEventListener('click', () => play([partials]));
+    document.getElementById('w5-res').addEventListener('click', () => play([computed]));
+    document.getElementById('w5-sum').addEventListener('click', () => play([partials, computed]));
+    document.getElementById('w5-stop').addEventListener('click', stop);
+
+    function draw() {
+      const canvas = document.getElementById('w5-canvas');
+      const { g, w, h } = fitCanvas(canvas);
+      g.clearRect(0, 0, w, h);
+
+      const lanes = [
+        { data: original, label: 'original', colour: css('--ink-dim') },
+        { data: partials, label: 'partials (tone)', colour: css('--spec-2') },
+        { data: computed, label: 'residual (noise)', colour: css('--residual') }
+      ];
+      const lh = h / lanes.length;
+
+      lanes.forEach((lane, li) => {
+        const mid = li * lh + lh / 2;
+        g.strokeStyle = css('--rule-soft');
+        g.lineWidth = 1;
+        g.beginPath(); g.moveTo(0, mid); g.lineTo(w, mid); g.stroke();
+
+        g.strokeStyle = lane.colour;
+        g.lineWidth = 1;
+        g.beginPath();
+        const step = Math.max(1, Math.floor(lane.data.length / w));
+        for (let px = 0; px < w; px++) {
+          let lo = 0, hi = 0;
+          const start = Math.floor(px / w * lane.data.length);
+          for (let i = start; i < start + step && i < lane.data.length; i++) {
+            if (lane.data[i] < lo) lo = lane.data[i];
+            if (lane.data[i] > hi) hi = lane.data[i];
+          }
+          const scale = lh * 0.40;
+          g.moveTo(px, mid - hi * scale);
+          g.lineTo(px, mid - lo * scale);
+        }
+        g.stroke();
+
+        g.fillStyle = css('--ink-faint');
+        g.font = '10px ' + css('--font-mono');
+        g.fillText(lane.label, 8, li * lh + 14);
+      });
+    }
+
+    register(draw);
+  }());
+
+  // =========================================================================
+  // WIDGET 6 — MIDI pitch-bend mapping
+  // =========================================================================
+
+  (function midiMap() {
+    const RANGES = [2, 12, 24, 48];
+    const canvas = document.getElementById('w6-canvas');
+    const slider = document.getElementById('w6-range');
+    const quantBtn = document.getElementById('w6-quant');
+    let quantise = false;
+
+    const F_START = 440, F_END = 880, DUR = 1.0;
+    const trueF = (t) => F_START * Math.pow(2, (t / DUR) * Math.log2(F_END / F_START));
+
+    quantBtn.addEventListener('click', () => {
+      quantise = !quantise;
+      quantBtn.setAttribute('aria-pressed', String(quantise));
+      draw();
+    });
+
+    function draw() {
+      const range = RANGES[+slider.value];
+      document.getElementById('w6-range-v').textContent = '±' + range + ' semitones';
+
+      const { g, w, h } = fitCanvas(canvas);
+      g.clearRect(0, 0, w, h);
+      const pad = { l: 46, r: 10, t: 16, b: 24 };
+      const plotW = w - pad.l - pad.r, plotH = h - pad.t - pad.b;
+      const F_LO = 400, F_HI = 950;
+      const xOf = (t) => pad.l + (t / DUR) * plotW;
+      const yOf = (f) => pad.t + plotH -
+        (Math.log2(f / F_LO) / Math.log2(F_HI / F_LO)) * plotH;
+
+      g.font = '9px ' + css('--font-mono');
+      [440, 554, 659, 880].forEach((f) => {
+        const y = yOf(f);
+        g.strokeStyle = css('--rule-soft');
+        g.lineWidth = 1;
+        g.beginPath(); g.moveTo(pad.l, y); g.lineTo(w - pad.r, y); g.stroke();
+        g.fillStyle = css('--ink-faint');
+        g.fillText(f + ' Hz', 4, y + 3);
+      });
+
+      // True partial
+      g.strokeStyle = css('--accent');
+      g.lineWidth = 2.4;
+      g.beginPath();
+      for (let px = 0; px <= plotW; px++) {
+        const t = (px / plotW) * DUR;
+        const x = pad.l + px, y = yOf(trueF(t));
+        px === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.stroke();
+
+      // MIDI reconstruction: note 69 + bend, clipped at the range limit.
+      let clippedFrom = -1;
+      g.lineWidth = 1.8;
+      g.beginPath();
+      let started = false;
+      for (let px = 0; px <= plotW; px++) {
+        const t = (px / plotW) * DUR;
+        let dev = 1200 * Math.log2(trueF(t) / F_START);      // cents above A4
+        const limit = range * 100;
+        if (dev > limit) { dev = limit; if (clippedFrom < 0) clippedFrom = t; }
+        if (quantise) dev = Math.round(dev / 100) * 100;
+        const f = F_START * Math.pow(2, dev / 1200);
+        const x = pad.l + px, y = yOf(f);
+        if (!started) { g.moveTo(x, y); started = true; } else { g.lineTo(x, y); }
+      }
+      g.strokeStyle = clippedFrom >= 0 ? css('--danger') : css('--spec-4');
+      g.stroke();
+
+      // Shade the clipped region
+      if (clippedFrom >= 0) {
+        g.fillStyle = css('--danger');
+        g.globalAlpha = 0.12;
+        g.fillRect(xOf(clippedFrom), pad.t, xOf(DUR) - xOf(clippedFrom), plotH);
+        g.globalAlpha = 1;
+        g.fillStyle = css('--danger');
+        g.fillText('clipped — bend range exceeded', xOf(clippedFrom) + 6, pad.t + 14);
+      }
+
+      g.fillStyle = css('--ink-faint');
+      g.fillText('time →', pad.l, h - 8);
+
+      const covered = Math.min(100, (range * 100 / 1200) * 100);
+      document.getElementById('w6-cover').textContent = covered.toFixed(0) + '%';
+      const status = document.getElementById('w6-status');
+      if (clippedFrom >= 0) {
+        status.textContent = 'CLIPPED'; status.className = 'val bad';
+      } else if (quantise) {
+        status.textContent = 'quantised'; status.className = 'val warn';
+      } else {
+        status.textContent = 'clean'; status.className = 'val good';
+      }
+    }
+
+    slider.addEventListener('input', draw);
+    register(draw);
+  }());
+
+}());
+</script>
