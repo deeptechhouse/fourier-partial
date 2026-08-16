@@ -1,0 +1,1428 @@
+<title>Every Sound Is a Chord</title>
+
+<style>
+/* ===========================================================================
+   Every Sound Is a Chord — a listening guide to fourier_partial
+   For musicians and for people who have never thought about this before.
+
+   THE ONE DESIGN RULE: colour means sound.
+   The page is black on paper. The spectral ramp appears only where something
+   is a tone you can hear. Nothing is coloured for decoration — if it has
+   colour, you can press it and it will make a sound.
+   =========================================================================== */
+
+:root {
+  --paper:      #faf8f4;
+  --paper-warm: #f1ece2;
+  --paper-deep: #e6dfd2;
+  --ink:        #14120f;
+  --ink-soft:   #4a453e;
+  --ink-faint:  #7d766c;
+  --rule:       #ddd5c6;
+
+  /* Sound. Low to high. The only colour on the page. */
+  --tone-0: #5b3fc4;
+  --tone-1: #2f5fc0;
+  --tone-2: #1a7f9c;
+  --tone-3: #1f8f74;
+  --tone-4: #7d8f1a;
+  --tone-5: #b0731a;
+
+  --accent:      #1a7f9c;
+  --accent-soft: #d6e8ee;
+  --noise:       #8a837a;
+
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --measure: 34rem;
+  --wide: 56rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #16130f;
+    --paper-warm: #1e1a15;
+    --paper-deep: #26211b;
+    --ink:        #f2ece1;
+    --ink-soft:   #c0b8ab;
+    --ink-faint:  #8d857a;
+    --rule:       #332c24;
+
+    --tone-0: #9d84f0;
+    --tone-1: #7aa2f0;
+    --tone-2: #4dc0dd;
+    --tone-3: #5ad4ae;
+    --tone-4: #bcd45e;
+    --tone-5: #eeb050;
+
+    --accent:      #4dc0dd;
+    --accent-soft: #1c3b44;
+    --noise:       #9a9289;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #16130f;
+  --paper-warm: #1e1a15;
+  --paper-deep: #26211b;
+  --ink:        #f2ece1;
+  --ink-soft:   #c0b8ab;
+  --ink-faint:  #8d857a;
+  --rule:       #332c24;
+
+  --tone-0: #9d84f0;
+  --tone-1: #7aa2f0;
+  --tone-2: #4dc0dd;
+  --tone-3: #5ad4ae;
+  --tone-4: #bcd45e;
+  --tone-5: #eeb050;
+
+  --accent:      #4dc0dd;
+  --accent-soft: #1c3b44;
+  --noise:       #9a9289;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: var(--wide); margin: 0 auto; padding: 0 1.5rem; }
+.col { max-width: var(--measure); }
+
+/* --- Opening -------------------------------------------------------------- */
+
+.opening {
+  padding: 6rem 0 3.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 2rem;
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 8vw, 5rem);
+  line-height: 1.02;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.5rem;
+  max-width: 16ch;
+  text-wrap: balance;
+}
+
+.standfirst {
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2.4vw, 1.5rem);
+  line-height: 1.45;
+  color: var(--ink-soft);
+  max-width: 40rem;
+  margin: 0 0 2rem;
+  text-wrap: pretty;
+}
+
+.audiences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  max-width: 40rem;
+}
+
+/* --- Sections ------------------------------------------------------------- */
+
+section { padding: 4rem 0; border-bottom: 1px solid var(--rule); }
+
+.part {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 1rem;
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 4.5vw, 2.7rem);
+  line-height: 1.1;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  margin: 0 0 1.5rem;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+
+h3 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 400;
+  margin: 2.5rem 0 0.75rem;
+  max-width: 28ch;
+}
+
+p { margin: 0 0 1.25rem; max-width: var(--measure); text-wrap: pretty; }
+
+.lead { font-size: 1.15rem; line-height: 1.55; }
+
+/* An aside, set like a margin note in print. */
+.note {
+  border-left: 2px solid var(--rule);
+  padding: 0.15rem 0 0.15rem 1.25rem;
+  margin: 2rem 0;
+  max-width: var(--measure);
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+.note p { margin-bottom: 0.7rem; }
+.note p:last-child { margin-bottom: 0; }
+.note strong { color: var(--ink); }
+
+em { font-style: italic; }
+strong { font-weight: 600; }
+
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+
+ul { max-width: var(--measure); padding-left: 1.2rem; margin: 0 0 1.25rem; }
+li { margin-bottom: 0.6rem; }
+
+/* --- Listening stations --------------------------------------------------- */
+
+.station {
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  margin: 2.5rem 0;
+  overflow: hidden;
+}
+
+.station-head {
+  padding: 1.1rem 1.4rem 0.9rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.station-head .tag {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.station-head h4 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.station-body { padding: 1.4rem; }
+
+.station-body > p {
+  font-size: 0.98rem;
+  color: var(--ink-soft);
+  max-width: 46rem;
+}
+
+.hint {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  margin: 1rem 0 0;
+  max-width: 46rem;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+/* --- Buttons -------------------------------------------------------------- */
+
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 1.1rem; }
+
+button {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+button:hover { border-color: var(--ink-faint); }
+
+button.primary {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+  font-weight: 500;
+}
+button.primary:hover { opacity: 0.86; }
+
+/* A tone button carries its own colour, because it IS a tone. */
+button.tone { border-width: 2px; font-variant-numeric: tabular-nums; }
+button.tone[aria-pressed="true"] { color: var(--paper); }
+
+button[aria-pressed="true"]:not(.tone) {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- Sliders -------------------------------------------------------------- */
+
+.sliders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.1rem;
+}
+
+.slider-cell { display: flex; flex-direction: column; gap: 0.25rem; }
+
+.slider-cell label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; background: var(--rule); border-radius: 2px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); margin-top: -5.5px;
+}
+input[type="range"]::-moz-range-track { height: 3px; background: var(--rule); border-radius: 2px; }
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--accent);
+}
+
+/* --- Readouts ------------------------------------------------------------- */
+
+.readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.readout div span { display: block; }
+.readout .k { font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.readout .v { font-size: 1rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* --- Uses grid ------------------------------------------------------------ */
+
+.uses {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1.75rem 2.5rem;
+  margin: 2rem 0 0;
+  max-width: var(--wide);
+}
+
+.use h4 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 400;
+  margin: 0 0 0.4rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--ink);
+}
+
+.use p { font-size: 0.94rem; color: var(--ink-soft); margin: 0; max-width: none; }
+
+/* --- Screen walkthrough --------------------------------------------------- */
+
+.screen {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  background: var(--paper-warm);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.2rem;
+  margin: 1.75rem 0;
+  overflow-x: auto;
+  line-height: 1.9;
+  max-width: var(--wide);
+}
+.screen .lbl { color: var(--ink-faint); }
+.screen b { font-weight: 600; }
+
+/* --- Details -------------------------------------------------------------- */
+
+details {
+  border-top: 1px solid var(--rule);
+  padding: 1.1rem 0;
+  max-width: var(--measure);
+}
+summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  list-style: none;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before { content: '+ '; color: var(--accent); font-family: var(--font-mono); }
+details[open] summary::before { content: '– '; }
+details > *:not(summary) { margin-top: 1rem; }
+
+/* --- Footer --------------------------------------------------------------- */
+
+footer {
+  padding: 3rem 0 5rem;
+  color: var(--ink-faint);
+  font-size: 0.88rem;
+}
+footer p { max-width: var(--measure); }
+
+.theme-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.35rem 0.7rem;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 640px) {
+  body { font-size: 17px; }
+  .opening { padding: 3.5rem 0 2.5rem; }
+  section { padding: 2.75rem 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="opening">
+  <p class="kicker">A listening guide to fourier_partial</p>
+  <h1>Every sound is a chord</h1>
+  <p class="standfirst">
+    Even a single note. Even a slammed door. This is a program that pulls a
+    recording apart into the separate tones hiding inside it, so you can hear
+    them one at a time — and put them back together again.
+  </p>
+  <p class="audiences">
+    <span>No maths required</span>
+    <span>Nothing to know in advance</span>
+    <span>Bring headphones</span>
+  </p>
+</header>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part one · the idea</p>
+  <h2>You already do this without trying</h2>
+
+  <p class="lead">
+    Put on a record. Somewhere in the room, one loudspeaker is moving back and
+    forth. One moving object. It produces a single, wobbling change in air
+    pressure — and out of that one wobble you hear a bass line, a voice, a
+    cymbal, and the hum of the room they recorded in.
+  </p>
+
+  <p>
+    Your ears took one tangled signal and pulled it into separate things. You
+    didn't decide to. You can't switch it off.
+  </p>
+
+  <p>
+    <strong>That separation is what this program does</strong> — but slowly,
+    visibly, and with a pause button. Instead of happening inside your head in
+    an instant, it happens on a screen where you can look at each piece, listen
+    to it alone, turn it off, or save it to a file.
+  </p>
+
+  <div class="station">
+    <div class="station-head">
+      <span class="tag">Listen · 1</span>
+      <h4>One sound, or three?</h4>
+    </div>
+    <div class="station-body">
+      <p>
+        Press <em>All together</em>. That's one sound — a chord. Now press the
+        three coloured buttons and hear what it was made of the whole time.
+      </p>
+      <div class="row">
+        <button class="primary" id="d1-all" type="button">All together</button>
+        <button class="tone" id="d1-a" type="button" data-tone="0">Lowest</button>
+        <button class="tone" id="d1-b" type="button" data-tone="2">Middle</button>
+        <button class="tone" id="d1-c" type="button" data-tone="4">Highest</button>
+        <button id="d1-stop" type="button">Stop</button>
+      </div>
+      <p class="hint">Sound starts when you press a button — browsers require that.</p>
+    </div>
+  </div>
+
+  <p>
+    Nothing was added or removed. The chord <em>is</em> those three tones,
+    happening at once. Playing them together and playing the chord are the same
+    physical event.
+  </p>
+
+  <div class="note">
+    <p>
+      <strong>The name.</strong> Two hundred years ago a French mathematician
+      called Joseph Fourier was studying how heat spreads through metal, and
+      worked out that any complicated wobble can be built from simple, regular
+      ones added together. That idea is now called the <em>Fourier transform</em>,
+      and it is doing the work here.
+    </p>
+    <p>
+      You do not need to know anything else about it. Everything on this page
+      works whether or not you ever think about that word again.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part two · the building block</p>
+  <h2>The simplest possible sound</h2>
+
+  <p>
+    There is one sound that cannot be pulled apart any further. It's a
+    <strong>pure tone</strong> — a single steady pitch with nothing else in it.
+    A tuning fork is close. A test tone is exactly it.
+  </p>
+
+  <p>
+    Every other sound in the world can be built by stacking pure tones on top of
+    each other. Change how many, and how loud each one is, and you change what
+    the sound <em>is</em> — a flute, a violin, a voice, a bell.
+  </p>
+
+  <p>Stack some yourself.</p>
+
+  <div class="station">
+    <div class="station-head">
+      <span class="tag">Listen · 2</span>
+      <h4>Build a sound out of pure tones</h4>
+    </div>
+    <div class="station-body">
+      <canvas id="d2-canvas" height="150" aria-label="The wave shape produced by the current mix of pure tones"></canvas>
+      <div class="sliders" id="d2-sliders"></div>
+      <div class="row">
+        <button class="primary" id="d2-play" type="button" aria-pressed="false">Play</button>
+        <button id="d2-p1" type="button">Just one tone</button>
+        <button id="d2-p2" type="button">Warm</button>
+        <button id="d2-p3" type="button">Reedy</button>
+        <button id="d2-p4" type="button">Hollow</button>
+      </div>
+      <p class="hint">
+        The first slider is the note you'd name. The rest sit above it, and they're
+        what makes it sound like <em>something</em> rather than a test tone.
+      </p>
+    </div>
+  </div>
+
+  <p>
+    Leave only the first slider up and you get that thin electronic beep. Raise
+    the others and it thickens into something you could imagine an instrument
+    making — same note, completely different character.
+  </p>
+
+  <p>
+    Musicians usually call this <strong>additive synthesis</strong>: making
+    sounds by adding pure tones together. <strong>This program runs it
+    backwards.</strong> You hand it a finished sound, and it works out which
+    sliders were up.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part three · what the program does</p>
+  <h2>A prism for sound</h2>
+
+  <p class="lead">
+    Hold a glass prism up to daylight and a white beam comes out the other side
+    as a spread of colours. The colours were always there. The prism only
+    separates them.
+  </p>
+
+  <p>
+    This program is that, for sound. A recording goes in. What comes out is a
+    stack of separate tones — each one on its own track, each one something you
+    can hear by itself.
+  </p>
+
+  <div class="station">
+    <div class="station-head">
+      <span class="tag">Listen · 3</span>
+      <h4>Pull a sound apart</h4>
+    </div>
+    <div class="station-body">
+      <p>
+        A struck metal bar. Press <em>Play the whole sound</em> first. Then turn
+        tones off one at a time and hear the sound change — or switch them all
+        off but one, and hear a single ingredient on its own.
+      </p>
+      <canvas id="d3-canvas" height="130" aria-label="The tones currently switched on, drawn as separate coloured waves"></canvas>
+      <div class="row" id="d3-tones"></div>
+      <div class="row">
+        <button class="primary" id="d3-play" type="button" aria-pressed="false">Play the whole sound</button>
+        <button id="d3-allon" type="button">Turn all on</button>
+        <button id="d3-alloff" type="button">Turn all off</button>
+      </div>
+      <div class="readout">
+        <div><span class="k">Tones sounding</span><span class="v" id="d3-count">5 of 5</span></div>
+        <div><span class="k">You are hearing</span><span class="v" id="d3-what">the original sound</span></div>
+      </div>
+      <p class="hint">
+        With every tone on, this is the original recording — exactly, not approximately.
+      </p>
+    </div>
+  </div>
+
+  <p>
+    That last line matters more than it sounds. Turn everything on and you get
+    <strong>precisely</strong> what you fed in — not a good imitation of it. The
+    program is built so the pieces always add back up to the whole. Nothing
+    quietly goes missing along the way.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part four · the honest part</p>
+  <h2>Not everything is a tone</h2>
+
+  <p>
+    Pluck a guitar string and you get a note — but you also get the
+    <em>click</em> of the pick, the scrape of a finger, the thump of the body.
+    None of that is a pitch. There's no note you could name for it.
+  </p>
+
+  <p>
+    So when the program pulls a recording apart, it puts every steady tone on
+    its own track, and everything else — the breath, the scrape, the hiss of
+    the room — into one last track called <strong>the leftover</strong>.
+  </p>
+
+  <div class="station">
+    <div class="station-head">
+      <span class="tag">Listen · 4</span>
+      <h4>The tone, the noise, and both</h4>
+    </div>
+    <div class="station-body">
+      <p>A plucked string, taken apart into its two halves.</p>
+      <div class="row">
+        <button class="primary" id="d4-both" type="button">The whole recording</button>
+        <button class="tone" id="d4-tone" type="button" data-tone="2">Only the tones</button>
+        <button id="d4-noise" type="button">Only the leftover</button>
+        <button id="d4-stop" type="button">Stop</button>
+      </div>
+      <p class="hint">
+        <em>Only the tones</em> sounds oddly synthetic — that's the pluck missing.
+        <em>Only the leftover</em> is the pluck with the note removed.
+      </p>
+    </div>
+  </div>
+
+  <p>
+    This isn't a shortcoming to apologise for. It turns out you genuinely
+    <em>cannot</em> describe a sharp click as a small set of steady tones — a
+    click is over too quickly to have a pitch. The leftover track is where that
+    material has to live.
+  </p>
+
+  <div class="note">
+    <p>
+      <strong>For most people the leftover is the interesting one.</strong> It's
+      the sound of the thing being played rather than the note it produced:
+      breath, bow hair, fingers, the room. Solo it and you get an oddly intimate
+      recording of a performance with all the music taken out.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part five · for musicians</p>
+  <h2>What you can actually make with it</h2>
+
+  <p class="lead">
+    Everything above is the explanation. This is the part that might change what
+    you do on a Tuesday afternoon.
+  </p>
+
+  <div class="uses">
+    <div class="use">
+      <h4>Resynthesise a field recording</h4>
+      <p>
+        Feed in a recording of a room, a train, a fridge. Keep three tones,
+        throw away the rest, and you have a drone that is <em>literally</em> made
+        of that place — not a filter sweep pretending to be.
+      </p>
+    </div>
+    <div class="use">
+      <h4>Steal one partial from a bell</h4>
+      <p>
+        Struck metal is full of tones that don't belong to any scale. Solo one
+        and export it. You now have a tuning that came from an object rather
+        than from a keyboard.
+      </p>
+    </div>
+    <div class="use">
+      <h4>Turn a sample into MIDI that bends</h4>
+      <p>
+        Export any track as MIDI and it keeps its slides and vibrato as pitch
+        bend, not as a note snapped to the nearest semitone. A vocal glide stays
+        a glide.
+      </p>
+    </div>
+    <div class="use">
+      <h4>Subtractive editing on a source</h4>
+      <p>
+        Mute the two tones muddying a sample and export what's left. This is EQ
+        that removes a specific sounding thing, not a frequency range containing
+        it.
+      </p>
+    </div>
+    <div class="use">
+      <h4>Keep only the leftover</h4>
+      <p>
+        Mute every tone and export the noise track. Bow scrape, valve clatter,
+        breath, room. A percussion library made from the parts of a performance
+        nobody records on purpose.
+      </p>
+    </div>
+    <div class="use">
+      <h4>Find out what a chord actually is</h4>
+      <p>
+        Analyse a sound you like and read the note names off the screen. Useful
+        when something is beautiful and you have no idea why.
+      </p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p>
+      <strong>The material matters more than the settings.</strong> Sustained,
+      pitched things — strings, voice, drones, feedback, bells — pull apart
+      beautifully. Drums, noise and dense mixes mostly land in the leftover
+      track, because there isn't much steady pitch in them to find.
+    </p>
+    <p>
+      That isn't the program failing. It's telling you something true about the
+      sound.
+    </p>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part six · using it</p>
+  <h2>What you'll see</h2>
+
+  <p>
+    Drag an audio file onto the window. It thinks for a while — a few seconds
+    for a short phrase, about a minute for ten minutes of music — and then you
+    get a list.
+  </p>
+
+  <div class="screen">
+    <div><span class="lbl">[M] [S]</span>  <b>A3 + 6 harmonics</b>    <span class="lbl">╱╲╱╲╱╲╱╲╱╲╱╲</span>   <span class="lbl">[wav] [mid]</span></div>
+    <div><span class="lbl">[M] [S]</span>  <b>C4 + 9 harmonics</b>    <span class="lbl">╱╱╲╲╱╱╲╲╱╱╲╲</span>   <span class="lbl">[wav] [mid]</span></div>
+    <div><span class="lbl">[M] [S]</span>  <b>E4 + 4 harmonics</b>    <span class="lbl">╲╲╱╱╲╲╱╱╲╲╱╱</span>   <span class="lbl">[wav] [mid]</span></div>
+    <div><span class="lbl">[M] [S]</span>  <b>Leftover</b>            <span class="lbl">▓▒░▒▓░▒▓▒░▓▒</span>   <span class="lbl">[wav]</span></div>
+  </div>
+
+  <ul>
+    <li><strong>M</strong> mutes a track — everything else keeps playing.</li>
+    <li><strong>S</strong> solos it — you hear only that.</li>
+    <li>The <strong>name</strong> is the note it found, in ordinary note names.</li>
+    <li>The <strong>squiggle</strong> is that tone's pitch drawn over time. A wobble is vibrato; a slope is a slide.</li>
+    <li><strong>wav</strong> saves it as audio. <strong>mid</strong> saves it as notes for an instrument.</li>
+  </ul>
+
+  <p>
+    Play everything at once and you hear your original file back. Start muting,
+    and you're editing the sound by its contents rather than by its frequencies.
+  </p>
+
+  <h3>Two things worth knowing</h3>
+
+  <p>
+    <strong>Long recordings show fewer tracks than they found.</strong> Ten
+    minutes of music might contain a thousand notes. You'll get the most
+    prominent forty, and the rest gets folded into the leftover. It'll tell you
+    when it does that. Nothing is lost — you still hear all of it — those notes
+    just don't each get their own row.
+  </p>
+
+  <p>
+    <strong>Short is sharper.</strong> A few seconds of one sound gives a much
+    finer result than ten minutes of a full arrangement. If something matters,
+    cut it down and feed it in on its own.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <p class="part">Part seven · if you're curious</p>
+  <h2>The part with the maths in it</h2>
+
+  <p>
+    You can stop here and use the program perfectly well. But if any of that
+    raised a question, here are the answers, kept short.
+  </p>
+
+  <details>
+    <summary>Why can't it separate two instruments playing the same note?</summary>
+    <p>
+      Because it separates by <em>pitch</em>, not by instrument. Two things
+      playing the same note are, as far as the air is concerned, one louder
+      thing. Nothing in the signal says where a tone came from.
+    </p>
+    <p>
+      Splitting a mix into vocals, drums and bass is a different job that needs
+      a trained model, and this program doesn't attempt it.
+    </p>
+  </details>
+
+  <details>
+    <summary>Why does a drum recording end up almost entirely in the leftover?</summary>
+    <p>
+      A tone needs time to exist. To be a pitch, something has to repeat
+      regularly for long enough to count the repeats. A drum hit is over before
+      that can happen, so there's no steady pitch to find.
+    </p>
+    <p>
+      This isn't a limitation of the program. There's a genuine mathematical
+      result saying a sound cannot be both very brief and very precisely pitched
+      — you can have one or the other. It's the same idea as the uncertainty
+      principle in physics, and it's the single biggest constraint on how this
+      program works.
+    </p>
+  </details>
+
+  <details>
+    <summary>What does "+ 6 harmonics" mean next to a note?</summary>
+    <p>
+      When something makes a note, it doesn't produce one pure tone — it
+      produces a whole family at once: the note you'd name, plus quieter tones
+      at two times, three times, four times its speed. Those are harmonics, and
+      their particular mix is what makes a clarinet sound unlike a violin.
+    </p>
+    <p>
+      The program gathers a note's harmonics onto one track, because you almost
+      always want to move the note around as a whole. You can still open it up
+      and take them individually.
+    </p>
+  </details>
+
+  <details>
+    <summary>Is anything lost when it takes a sound apart?</summary>
+    <p>
+      No. This was the central design decision. The leftover track isn't
+      estimated — it's calculated by subtracting the tones from the original,
+      which means the pieces add back up to exactly what you put in. Every
+      sample of it.
+    </p>
+    <p>
+      Saving a track as audio is likewise lossless. Saving as MIDI is not, and
+      can't be: MIDI describes notes, not sound.
+    </p>
+  </details>
+
+  <details>
+    <summary>Where did this come from?</summary>
+    <p>
+      Fourier published the underlying idea in 1822, working on heat. It now
+      underpins a startling amount of daily life — every MP3, every phone call,
+      every JPEG, every MRI scan.
+    </p>
+    <p>
+      It's also still live mathematics. A 2026 result by Alex Cohen, then a
+      doctoral student, sharpened a related principle about how concentrated a
+      signal can be in time and in pitch at once — the same trade-off that
+      decides what this program can and cannot pull apart.
+    </p>
+  </details>
+</section>
+
+<footer>
+  <p>
+    <strong>Every Sound Is a Chord</strong> — a listening guide to
+    <em>fourier_partial</em>, a program for taking recordings apart into the
+    tones inside them.
+  </p>
+  <p>
+    Every sound on this page was generated by your browser as you pressed the
+    buttons. Nothing here is a recording.
+  </p>
+  <p style="margin-top:1.5rem">
+    <button class="theme-btn" id="theme-toggle" type="button">Switch light / dark</button>
+  </p>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // =========================================================================
+  // Shared audio plumbing
+  // =========================================================================
+  // Everything you hear is built here, live. There are no audio files: a page
+  // that ships megabytes of samples to explain that sound is made of tones has
+  // rather missed its own point.
+
+  let ctx = null;
+
+  /** Browsers refuse to make sound until a user gesture, so this is lazy. */
+  function audio() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  const css = (name) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  const TONE_VARS = ['--tone-0', '--tone-1', '--tone-2', '--tone-3', '--tone-4', '--tone-5'];
+
+  /**
+   * A voice: one or more pure tones, with a gentle envelope.
+   *
+   * Every demo is some arrangement of this. `partials` is a list of
+   * {hz, gain} — which is precisely the thing the program tries to recover
+   * when you give it a finished sound.
+   */
+  function playVoice(partials, { duration = 2.4, attack = 0.01, decay = null } = {}) {
+    const c = audio();
+    const now = c.currentTime;
+    const out = c.createGain();
+    out.connect(c.destination);
+
+    // A soft attack and release: a gain that jumps produces a click, which is
+    // itself broadband noise — the very thing Part four is about.
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(1, now + attack);
+    out.gain.setValueAtTime(1, now + duration - 0.25);
+    out.gain.linearRampToValueAtTime(0, now + duration);
+
+    const nodes = [];
+    for (const p of partials) {
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = 'sine'; // a pure tone, by definition
+      osc.frequency.value = p.hz;
+      gain.gain.setValueAtTime(p.gain, now);
+      if (decay) gain.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+      osc.connect(gain).connect(out);
+      osc.start(now);
+      osc.stop(now + duration + 0.05);
+      nodes.push(osc);
+    }
+    return { stop: () => nodes.forEach((n) => { try { n.stop(); } catch (e) { /* already stopped */ } }) };
+  }
+
+  /**
+   * Only one demo makes sound at a time.
+   *
+   * This needs saying because two of the demos hold their oscillators running
+   * indefinitely (they are instruments you adjust while they sound, not clips
+   * you trigger). Without a shared registry, starting demo one would leave
+   * demos two and three droning underneath it, and a page whose whole argument
+   * is "listen to this one thing" would be playing three at once.
+   *
+   * So anything that can make a lasting sound registers a way to stop itself,
+   * and every route into playing goes through stopAll first.
+   */
+  const stoppers = [];
+  function registerStopper(fn) { stoppers.push(fn); }
+
+  /**
+   * Fade a bank of oscillators out and stop them shortly after.
+   *
+   * Two demos need exactly this, and both need it to be safe to call when
+   * nothing is playing — stopAll runs every registered stopper unconditionally.
+   * Fading rather than stopping outright because an abrupt halt is a step in
+   * the waveform, which is a click, which is the broadband noise Part four is
+   * about. Explaining tones with an audible click on every button would be a
+   * poor advertisement.
+   */
+  function fadeOutBank(bank) {
+    if (!bank) return;
+    const c = audio();
+    bank.gains.forEach((g) => g.gain.setTargetAtTime(0, c.currentTime, 0.03));
+    setTimeout(() => bank.oscs.forEach((o) => { try { o.stop(); } catch (e) { /* already stopped */ } }), 250);
+  }
+
+  let current = null;
+  function stopAll() {
+    if (current) current.stop();
+    current = null;
+    for (const stop of stoppers) stop();
+  }
+  function playExclusive(fn) {
+    stopAll();
+    current = fn();
+    return current;
+  }
+
+  /** Canvas sizing that survives retina displays and resizes. */
+  function fit(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const h = Number(canvas.getAttribute('height')) || 140;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.round(h * dpr);
+    canvas.style.height = h + 'px';
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { g, w: rect.width, h };
+  }
+
+  const redraws = [];
+  function onDraw(fn) { redraws.push(fn); fn(); }
+  window.addEventListener('resize', () => redraws.forEach((f) => f()));
+
+  // =========================================================================
+  // Theme
+  // =========================================================================
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const root = document.documentElement;
+    const explicit = root.getAttribute('data-theme');
+    const dark = explicit
+      ? explicit === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    redraws.forEach((f) => f());
+  });
+
+  // =========================================================================
+  // 1 — One sound, or three?
+  // =========================================================================
+
+  (function chord() {
+    // A minor triad, near enough. Named vaguely on purpose: "lowest / middle /
+    // highest" needs no musical training to follow.
+    const NOTES = { 'd1-a': 220.0, 'd1-b': 261.63, 'd1-c': 329.63 };
+
+    const paint = (id, on) => {
+      const btn = document.getElementById(id);
+      const colour = css(TONE_VARS[Number(btn.dataset.tone)]);
+      btn.style.setProperty('border-color', colour);
+      btn.style.setProperty('color', on ? css('--paper') : colour);
+      btn.style.setProperty('background', on ? colour : 'transparent');
+    };
+
+    const clear = () => Object.keys(NOTES).forEach((id) => paint(id, false));
+    Object.keys(NOTES).forEach((id) => paint(id, false));
+
+    Object.entries(NOTES).forEach(([id, hz]) => {
+      document.getElementById(id).addEventListener('click', () => {
+        clear();
+        paint(id, true);
+        playExclusive(() => playVoice([{ hz, gain: 0.28 }], { duration: 1.8 }));
+        setTimeout(clear, 1800);
+      });
+    });
+
+    document.getElementById('d1-all').addEventListener('click', () => {
+      clear();
+      Object.keys(NOTES).forEach((id) => paint(id, true));
+      playExclusive(() =>
+        playVoice(Object.values(NOTES).map((hz) => ({ hz, gain: 0.2 })), { duration: 2.2 })
+      );
+      setTimeout(clear, 2200);
+    });
+
+    document.getElementById('d1-stop').addEventListener('click', () => { stopAll(); clear(); });
+  }());
+
+  // =========================================================================
+  // 2 — Build a sound out of pure tones
+  // =========================================================================
+
+  (function additive() {
+    const N = 8;
+    const F0 = 130.81; // C3 — low enough that the harmonics are clearly audible
+    const amps = [1, 0, 0, 0, 0, 0, 0, 0];
+    const canvas = document.getElementById('d2-canvas');
+    const grid = document.getElementById('d2-sliders');
+    const playBtn = document.getElementById('d2-play');
+    let live = null;
+
+    const inputs = [];
+    for (let n = 1; n <= N; n++) {
+      const cell = document.createElement('div');
+      cell.className = 'slider-cell';
+      const id = 'd2-s' + n;
+      const label = document.createElement('label');
+      label.setAttribute('for', id);
+      label.textContent = n === 1 ? 'the note' : '×' + n;
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.id = id;
+      input.min = '0';
+      input.max = '100';
+      input.value = String(Math.round(amps[n - 1] * 100));
+      input.setAttribute('aria-label', n === 1 ? 'Loudness of the note itself' : 'Loudness of the tone ' + n + ' times as fast');
+      input.addEventListener('input', () => {
+        amps[n - 1] = Number(input.value) / 100;
+        draw();
+        retune();
+      });
+      cell.appendChild(label);
+      cell.appendChild(input);
+      grid.appendChild(cell);
+      inputs.push(input);
+    }
+
+    const sync = () => inputs.forEach((input, i) => { input.value = String(Math.round(amps[i] * 100)); });
+
+    const sample = (t) => {
+      let y = 0;
+      for (let n = 1; n <= N; n++) y += amps[n - 1] * Math.sin(2 * Math.PI * n * t);
+      return y;
+    };
+
+    function draw() {
+      const { g, w, h } = fit(canvas);
+      g.clearRect(0, 0, w, h);
+
+      g.strokeStyle = css('--rule');
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+
+      let peak = 0;
+      for (let i = 0; i <= 400; i++) peak = Math.max(peak, Math.abs(sample(i / 200)));
+      const scale = peak > 0 ? (h * 0.4) / peak : 0;
+
+      // The composite wave, in ink — it is a shape, not a tone.
+      g.strokeStyle = css('--ink');
+      g.lineWidth = 2;
+      g.beginPath();
+      for (let px = 0; px <= w; px++) {
+        const y = h / 2 - sample((px / w) * 2) * scale;
+        px === 0 ? g.moveTo(px, y) : g.lineTo(px, y);
+      }
+      g.stroke();
+    }
+
+    function retune() {
+      if (!live) return;
+      const c = audio();
+      live.gains.forEach((gain, i) =>
+        gain.gain.setTargetAtTime(amps[i] * 0.11, c.currentTime, 0.02)
+      );
+    }
+
+    /** Silence this demo. Safe to call when it is not playing. */
+    function silence() {
+      if (!live) return;
+      fadeOutBank(live);
+      live = null;
+      playBtn.setAttribute('aria-pressed', 'false');
+      playBtn.textContent = 'Play';
+    }
+    registerStopper(silence);
+
+    playBtn.addEventListener('click', () => {
+      if (live) { silence(); return; }
+      stopAll();
+      const c = audio();
+      const oscs = [], gains = [];
+      for (let n = 1; n <= N; n++) {
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = F0 * n;
+        gain.gain.value = 0;
+        gain.gain.setTargetAtTime(amps[n - 1] * 0.11, c.currentTime, 0.02);
+        osc.connect(gain).connect(c.destination);
+        osc.start();
+        oscs.push(osc); gains.push(gain);
+      }
+      live = { oscs, gains };
+      playBtn.setAttribute('aria-pressed', 'true');
+      playBtn.textContent = 'Stop';
+    });
+
+    const preset = (fn) => { for (let n = 1; n <= N; n++) amps[n - 1] = fn(n); sync(); draw(); retune(); };
+    document.getElementById('d2-p1').addEventListener('click', () => preset((n) => (n === 1 ? 1 : 0)));
+    document.getElementById('d2-p2').addEventListener('click', () => preset((n) => (n <= 4 ? 1 / n : 0)));
+    document.getElementById('d2-p3').addEventListener('click', () => preset((n) => 1 / n));
+    document.getElementById('d2-p4').addEventListener('click', () => preset((n) => (n % 2 === 1 ? 1 / n : 0)));
+
+    onDraw(draw);
+  }());
+
+  // =========================================================================
+  // 3 — Pull a sound apart
+  // =========================================================================
+
+  (function prism() {
+    // Deliberately inharmonic: struck metal, not a string. The ratios are not
+    // whole numbers, which is exactly why a bell has no clear "note" and why
+    // its individual tones are worth stealing.
+    const PARTIALS = [
+      { hz: 196.0, gain: 0.30, name: '196 Hz' },
+      { hz: 372.4, gain: 0.22, name: '372 Hz' },
+      { hz: 541.0, gain: 0.16, name: '541 Hz' },
+      { hz: 803.6, gain: 0.11, name: '804 Hz' },
+      { hz: 1191.0, gain: 0.07, name: '1191 Hz' },
+    ];
+    const on = PARTIALS.map(() => true);
+
+    const canvas = document.getElementById('d3-canvas');
+    const bar = document.getElementById('d3-tones');
+    const playBtn = document.getElementById('d3-play');
+    const countEl = document.getElementById('d3-count');
+    const whatEl = document.getElementById('d3-what');
+    let live = null;
+
+    const buttons = PARTIALS.map((p, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tone';
+      btn.textContent = p.name;
+      btn.setAttribute('aria-pressed', 'true');
+      btn.setAttribute('aria-label', 'Tone at ' + p.name + ', on');
+      btn.addEventListener('click', () => {
+        on[i] = !on[i];
+        refresh();
+        retune();
+      });
+      bar.appendChild(btn);
+      return btn;
+    });
+
+    function refresh() {
+      buttons.forEach((btn, i) => {
+        const colour = css(TONE_VARS[i]);
+        btn.setAttribute('aria-pressed', on[i] ? 'true' : 'false');
+        btn.setAttribute('aria-label', 'Tone at ' + PARTIALS[i].name + ', ' + (on[i] ? 'on' : 'off'));
+        btn.style.setProperty('border-color', colour);
+        btn.style.setProperty('background', on[i] ? colour : 'transparent');
+        btn.style.setProperty('color', on[i] ? css('--paper') : css('--ink-faint'));
+      });
+
+      const count = on.filter(Boolean).length;
+      countEl.textContent = count + ' of ' + PARTIALS.length;
+      whatEl.textContent =
+        count === PARTIALS.length ? 'the original sound'
+          : count === 0 ? 'silence'
+          : count === 1 ? 'one ingredient, alone'
+          : 'part of the sound';
+      draw();
+    }
+
+    function draw() {
+      const { g, w, h } = fit(canvas);
+      g.clearRect(0, 0, w, h);
+      const lanes = PARTIALS.length;
+      const laneH = h / lanes;
+
+      PARTIALS.forEach((p, i) => {
+        const mid = i * laneH + laneH / 2;
+        const active = on[i];
+        g.strokeStyle = active ? css(TONE_VARS[i]) : css('--rule');
+        g.lineWidth = active ? 1.8 : 1;
+        g.globalAlpha = active ? 1 : 0.5;
+        g.beginPath();
+        // Cycles drawn proportional to frequency, so higher tones visibly
+        // wiggle faster — the picture says the same thing as the sound.
+        const cycles = 2 + i * 1.6;
+        for (let px = 0; px <= w; px++) {
+          const y = mid - Math.sin((px / w) * cycles * 2 * Math.PI) * (laneH * 0.32);
+          px === 0 ? g.moveTo(px, y) : g.lineTo(px, y);
+        }
+        g.stroke();
+      });
+      g.globalAlpha = 1;
+    }
+
+    function activePartials() {
+      return PARTIALS.filter((_, i) => on[i]).map((p) => ({ hz: p.hz, gain: p.gain }));
+    }
+
+    function retune() {
+      if (!live) return;
+      const c = audio();
+      live.gains.forEach((gain, i) =>
+        gain.gain.setTargetAtTime(on[i] ? PARTIALS[i].gain : 0, c.currentTime, 0.02)
+      );
+    }
+
+    /** Silence this demo. Safe to call when it is not playing. */
+    function silence() {
+      if (!live) return;
+      fadeOutBank(live);
+      live = null;
+      playBtn.setAttribute('aria-pressed', 'false');
+      playBtn.textContent = 'Play the whole sound';
+    }
+    registerStopper(silence);
+
+    playBtn.addEventListener('click', () => {
+      if (live) { silence(); return; }
+      stopAll();
+      const c = audio();
+      const oscs = [], gains = [];
+      PARTIALS.forEach((p, i) => {
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = p.hz;
+        gain.gain.value = 0;
+        gain.gain.setTargetAtTime(on[i] ? p.gain : 0, c.currentTime, 0.02);
+        osc.connect(gain).connect(c.destination);
+        osc.start();
+        oscs.push(osc); gains.push(gain);
+      });
+      live = { oscs, gains };
+      playBtn.setAttribute('aria-pressed', 'true');
+      playBtn.textContent = 'Stop';
+    });
+
+    document.getElementById('d3-allon').addEventListener('click', () => {
+      on.fill(true); refresh(); retune();
+    });
+    document.getElementById('d3-alloff').addEventListener('click', () => {
+      on.fill(false); refresh(); retune();
+    });
+
+    onDraw(refresh);
+  }());
+
+  // =========================================================================
+  // 4 — The tone, the noise, and both
+  // =========================================================================
+
+  (function residual() {
+    const F0 = 164.81; // E3
+    let node = null;
+
+    /** The pitched half: harmonics of one note, decaying like a plucked string. */
+    function tones() {
+      const c = audio();
+      const now = c.currentTime;
+      const out = c.createGain();
+      out.gain.value = 1;
+      out.connect(c.destination);
+      const oscs = [];
+      for (let n = 1; n <= 7; n++) {
+        const osc = c.createOscillator();
+        const gain = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = F0 * n;
+        gain.gain.setValueAtTime(0.22 / n, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0);
+        osc.connect(gain).connect(out);
+        osc.start(now);
+        osc.stop(now + 2.1);
+        oscs.push(osc);
+      }
+      return { stop: () => oscs.forEach((o) => { try { o.stop(); } catch (e) {} }) };
+    }
+
+    /**
+     * The unpitched half: the pluck itself. A very short burst of noise — no
+     * pitch at all, which is exactly why it cannot be described as tones.
+     */
+    function noise() {
+      const c = audio();
+      const now = c.currentTime;
+      const len = Math.floor(c.sampleRate * 0.4);
+      const buffer = c.createBuffer(1, len, c.sampleRate);
+      const data = buffer.getChannelData(0);
+      let seed = 12345;
+      for (let i = 0; i < len; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        const r = (seed / 0x7fffffff) * 2 - 1;
+        data[i] = r * Math.exp(-28 * (i / c.sampleRate)); // dies away fast
+      }
+      const src = c.createBufferSource();
+      const gain = c.createGain();
+      gain.gain.value = 0.5;
+      src.buffer = buffer;
+      src.connect(gain).connect(c.destination);
+      src.start(now);
+      return { stop: () => { try { src.stop(); } catch (e) {} } };
+    }
+
+    function both() {
+      const a = tones();
+      const b = noise();
+      return { stop: () => { a.stop(); b.stop(); } };
+    }
+
+    const play = (fn) => { stopAll(); if (node) node.stop(); node = playExclusive(fn); };
+
+    document.getElementById('d4-both').addEventListener('click', () => play(both));
+    document.getElementById('d4-tone').addEventListener('click', () => play(tones));
+    document.getElementById('d4-noise').addEventListener('click', () => play(noise));
+    document.getElementById('d4-stop').addEventListener('click', () => { stopAll(); node = null; });
+
+    // The one coloured button here is the tones — the leftover is deliberately
+    // uncoloured, because it has no single pitch to colour it with.
+    const btn = document.getElementById('d4-tone');
+    const colour = css(TONE_VARS[Number(btn.dataset.tone)]);
+    btn.style.setProperty('border-color', colour);
+    btn.style.setProperty('color', colour);
+    onDraw(() => {
+      const c2 = css(TONE_VARS[Number(btn.dataset.tone)]);
+      btn.style.setProperty('border-color', c2);
+      btn.style.setProperty('color', c2);
+    });
+  }());
+}());
+</script>
