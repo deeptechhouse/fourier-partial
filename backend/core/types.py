@@ -182,10 +182,23 @@ class AnalysisParams:
                 "hop_size": 2048,
                 "zero_pad_factor": 1,
                 "max_peaks_per_frame": 60,
-                # A long recording has more genuinely distinct material in it,
-                # so allow more tracks -- but not proportionally more, because
-                # the interface still has to be readable.
-                "max_tracks": 300,
+                # FEWER tracks, not more, despite a long recording containing
+                # more distinct material. Three independent limits bite here
+                # and they all point the same way:
+                #
+                #   1. Rendering. Every track gets a buffer the length of the
+                #      whole file. Measured on ten minutes: 300 tracks took
+                #      5.7 minutes to render, 40 takes well under one.
+                #   2. The browser. Each track is ~106 MB decoded at ten
+                #      minutes, so even this many is a lot to hold; 300 would
+                #      be ~32 GB and would simply crash the tab.
+                #   3. The interface. Nobody operates 300 rows.
+                #
+                # The material that does not get its own row is not lost -- the
+                # residual absorbs it exactly, so it still plays and still
+                # exports. Only its claim to a separate row goes away, and the
+                # user is told so in the warnings.
+                "max_tracks": 40,
                 # Longer minimum duration: at 21 frames/s a 50 ms partial is
                 # one frame, which is noise, not a tone.
                 "min_partial_duration_ms": 120.0,

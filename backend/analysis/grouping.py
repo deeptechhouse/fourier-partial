@@ -68,8 +68,8 @@ MAX_HARMONIC_NUMBER: int = 16
 # included) to be considered a harmonic group rather than a lone tone.
 MIN_PARTIALS_PER_GROUP: int = 3
 
-# ADJUSTABLE: a track must carry at least this share of the TOTAL partial
-# energy to earn a row in the interface. 0.005 = half a percent.
+# ADJUSTABLE: a track must carry at least this share of the LOUDEST track's
+# energy to earn a row in the interface. 0.005 = half a percent of the loudest.
 #
 # WHY THIS EXISTS. Noise and transients throw off short-lived peaks that
 # occasionally survive tracking and then cluster into plausible-looking
@@ -124,6 +124,52 @@ class _Candidate:
     partial: Partial
     mean_frequency_hz: float
     energy: float
+    # Cached for the same reason as the two above: `Partial.frames` returns a
+    # defensive tuple copy, so reading start/end inside the grouping loop would
+    # rebuild the whole trajectory once per comparison.
+    start_time_s: float
+    end_time_s: float
+
+
+# ADJUSTABLE: how much of the shorter partial's life must coincide with the
+# seed's for the two to count as parts of the same note. 0.0 would accept a
+# single shared instant; 1.0 would demand total containment, which real
+# harmonics never manage (they decay at different rates, so upper partials die
+# first). A quarter is forgiving enough for that while still separating two
+# performances of the same pitch at different moments.
+MIN_TEMPORAL_OVERLAP: float = 0.25
+
+
+def _overlaps_in_time(candidate: _Candidate, seed: _Candidate) -> bool:
+    """Whether two partials sound at the same time, enough to be one note.
+
+    A note's harmonics start together and decay together. Two partials that
+    never coincide cannot belong to the same note however cleanly their
+    frequencies line up -- and on a long recording that distinction is the
+    difference between "a voice" and "every occurrence of this pitch in the
+    piece, stacked".
+
+    The overlap is measured against the SHORTER of the two partials, because a
+    long sustained fundamental and a brief upper harmonic genuinely are one
+    note; requiring the overlap to be large relative to the longer one would
+    reject exactly that case.
+    """
+    overlap = min(candidate.end_time_s, seed.end_time_s) - max(
+        candidate.start_time_s, seed.start_time_s
+    )
+    if overlap <= 0.0:
+        return False
+
+    shorter = min(
+        candidate.end_time_s - candidate.start_time_s,
+        seed.end_time_s - seed.start_time_s,
+    )
+    # A zero-length partial (single frame) has no duration to compare against.
+    # Any positive overlap is all it could ever manage, so accept it.
+    if shorter <= 0.0:
+        return True
+
+    return (overlap / shorter) >= MIN_TEMPORAL_OVERLAP
 
 
 def harmonic_number(
@@ -207,7 +253,10 @@ def group_partials(partials: list[Partial], params: AnalysisParams) -> list[Trac
     # brief loud partial and a long quiet one can share a peak amplitude, but
     # the one carrying more energy is the one the listener would miss.
     candidates = sorted(
-        (_Candidate(p, p.mean_frequency_hz, p.energy) for p in partials),
+        (
+            _Candidate(p, p.mean_frequency_hz, p.energy, p.start_time_s, p.end_time_s)
+            for p in partials
+        ),
         key=lambda candidate: candidate.energy,
         reverse=True,
     )
@@ -244,7 +293,17 @@ def group_partials(partials: list[Partial], params: AnalysisParams) -> list[Trac
                 fundamental_hz,
                 tolerance_cents=params.harmonic_tolerance_cents,
             )
-            if n is not None:
+            # Being a harmonic is necessary but NOT sufficient. The partials of
+            # one note also sound AT THE SAME TIME as it -- that is what makes
+            # them that note's harmonics rather than some other note's.
+            #
+            # Without this check the grouper merges every occurrence of a pitch
+            # anywhere in the recording into a single "note". On a phrase you
+            # never notice, because each pitch occurs once. On ten minutes of
+            # music it is ruinous: a repeated note produced a track labelled
+            # "G4 -46c + 11847 harmonics", which is not a voice, it is every G
+            # in the piece stacked into one row.
+            if n is not None and _overlaps_in_time(candidate, seed):
                 claimed.append(candidate)
             else:
                 still_ungrouped.append(candidate)
@@ -292,19 +351,33 @@ def group_partials(partials: list[Partial], params: AnalysisParams) -> list[Trac
     # Nothing is lost by dropping them -- the residual is an exact subtraction,
     # so their sound is still in the mix and still exportable. Only their claim
     # to be a separate note goes away.
-    total_energy = sum(_track_energy(track) for track in tracks)
-    if total_energy <= 0.0:
+    # Measured against the LOUDEST track, not against the total.
+    #
+    # This looks like a detail and is actually the difference between the
+    # filter working and the filter being a function of file length. A share of
+    # the total does not mean the same thing at different durations: in a
+    # four-note phrase each note carries ~25% of the energy, but in a
+    # thousand-note piece each carries ~0.1% -- so a fixed share of the total
+    # keeps everything in the first case and deletes everything in the second.
+    # Measured on a ten-minute recording it culled every real note and left
+    # 91% of the sound in the residual.
+    #
+    # Relative to the loudest track the question becomes "is this note
+    # comparable to the most prominent one", which means the same thing however
+    # long the recording is.
+    loudest = max((_track_energy(track) for track in tracks), default=0.0)
+    if loudest <= 0.0:
         # Silence, or partials with no energy at all. Nothing to rank, and
         # dividing by zero here would drop every track instead of keeping them.
         return tracks
 
-    floor = total_energy * MIN_TRACK_ENERGY_SHARE
+    floor = loudest * MIN_TRACK_ENERGY_SHARE
     audible = [track for track in tracks if _track_energy(track) >= floor]
 
     dropped = len(tracks) - len(audible)
     if dropped:
         logger.info(
-            "folded %d track(s) below %.1f%% of total energy into the residual",
+            "folded %d track(s) below %.1f%% of the loudest track into the residual",
             dropped,
             100.0 * MIN_TRACK_ENERGY_SHARE,
         )
