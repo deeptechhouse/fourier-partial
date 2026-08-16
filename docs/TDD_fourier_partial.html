@@ -1900,7 +1900,8 @@ sources.forEach(s =&gt; s.start(startAt, offset));</code></pre>
       <tr><td>Cubic phase interpolation?</td><td>Linear first. Measure before adding complexity</td><td>Phase 2, if artefacts appear</td></tr>
       <tr><td>Onset-time grouping cue?</td><td>Would fix the octave-merge weakness in section 6</td><td>Phase 2b, if octaves prove a common complaint</td></tr>
       <tr><td>Longer files?</td><td><strong>Done &mdash; 10 minutes supported.</strong> Needed a streamed spectrogram, duration-adaptive settings, temporal-overlap grouping, and a length-independent energy floor. 51 s for a 10-minute file.</td><td>Shipped</td></tr>
-      <tr><td>Browser memory on long files?</td><td><strong>The remaining limitation.</strong> A track is ~106 MB decoded at 10 minutes and the UI fetches all of them before first play</td><td>Next &mdash; fetch-on-demand plus serving the original for &ldquo;play all&rdquo;</td></tr>
+      <tr><td>Browser memory on long files?</td><td><strong>Solved.</strong> Measured 4,339 MB &rarr; 105 MB for a 41-track 10-minute analysis. &ldquo;Play all&rdquo; serves the mixdown (one buffer, valid because the tracks sum to the original exactly); tracks load on demand with LRU eviction. Short files keep the eager loader so solo stays instant.</td><td>Shipped</td></tr>
+      <tr><td>Parallel rendering?</td><td>The heavy stages are single-threaded, so extra cores sit idle. Rendering is embarrassingly parallel across tracks &mdash; the clearest remaining speed win</td><td>Open</td></tr>
     </tbody>
   </table>
   </div>

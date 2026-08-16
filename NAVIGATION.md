@@ -111,7 +111,21 @@ Four things make it work — remove any one and 10 minutes stops being feasible:
 3. Grouping requires **temporal overlap**, not just a harmonic relationship.
 4. The quiet-track energy floor is measured against the **loudest track**, not the total, so it means the same thing at any length.
 
-**Known limitation:** the browser fetches every track's audio before first play, and a track is ~106 MB decoded at 10 minutes. Forty tracks is several GB — fine for short phrases, heavy for long ones. The mitigations (fetch-on-demand, and serving the original for "play all", which is valid because the tracks sum to it exactly) are designed in TDD §9 but not yet built.
+### Playback memory (resolved)
+
+The browser used to fetch every track before the first Play — measured at **4,339 MB** for a 41-track 10-minute analysis. It now holds **105 MB**, a 41× reduction, because the tracks sum to the original exactly, so "play everything" is one buffer (`GET /api/jobs/{id}/mixdown`) rather than one per track. Muting uses `?exclude=ids`; individual tracks load on demand with LRU eviction. Short files keep the eager loader, so solo stays instant where it's affordable.
+
+The rule that keeps this correct: **the mix and individual tracks are never both audible.** An individually-fetched track is registered `soloOnly`, so it cannot stack on top of a mix that already contains it.
+
+### Track rows
+
+Rows collapse by pitch — a 41-track 10-minute analysis renders as **7 top-level rows** (G4×15, D4×8, B3×6, E4×5, A3×4, G3×2, Residual), each expandable to its occurrences. A pitch occurring once stays a plain row.
+
+### Remaining limitations
+
+- The heavy stages are **single-threaded**, so extra cores sit idle. Rendering is parallel across tracks and is the obvious next win.
+- Cost depends strongly on **material**: dense sustained textures are far more expensive than notes that stop, because every partial then spans the whole file.
+- A long file surfaces its 40 most prominent notes and folds the rest into the residual (still audible and exportable — the UI says so).
 
 ## Two Bugs Worth Knowing About
 
