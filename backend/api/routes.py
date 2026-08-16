@@ -8,7 +8,15 @@ API SURFACE
     GET    /api/jobs/{job_id}/tracks             track metadata (no audio)
     GET    /api/jobs/{job_id}/tracks/{tid}/audio rendered PCM for playback
     GET    /api/jobs/{job_id}/tracks/{tid}/export ?format=wav|mid
+    GET    /api/jobs/{job_id}/mixdown            ?exclude=ids -> all tracks, minus those
     GET    /api/health                           liveness
+
+WHY THERE IS A MIXDOWN ENDPOINT
+-------------------------------
+Because the tracks sum to the original exactly, "play everything" is one
+buffer rather than one buffer per track. At ten minutes a track is ~106 MB
+decoded, so for a long file that is the difference between ~106 MB in the
+browser and several gigabytes. `exclude` extends the same trick to muting.
 
 WHY A JOB RATHER THAN A SYNCHRONOUS RESPONSE
 --------------------------------------------
@@ -46,7 +54,7 @@ from backend.analysis.pipeline import downsample_trajectory
 from backend.api.jobs import InMemoryJobStore, JobState
 from backend.config import settings
 from backend.core.errors import FourierPartialError, UnsupportedExportError
-from backend.core.types import AnalysisParams, AnalysisResult, Track, TrackKind
+from backend.core.types import AnalysisParams, AnalysisResult, Track, TrackKind, pitch_label
 from backend.export.midi_exporter import MidiExporter
 from backend.export.wav_exporter import WavExporter
 from backend.services import build_loader, build_pipeline
@@ -155,6 +163,11 @@ class TrackSummary(BaseModel):
     partial_count: int
     exportable_as_midi: bool
 
+    # The bare note name ('G4'), with no cent deviation. The interface groups
+    # rows by this so a long recording reads as "G4, seven times" rather than
+    # as seven near-identical rows. Empty for the residual, which has no pitch.
+    pitch: str = ""
+
     # Downsampled trajectory for the visualiser. Full-resolution trajectories
     # would be megabytes per track; the display is a few hundred pixels wide,
     # so sending more than it can draw is pure waste.
@@ -245,6 +258,7 @@ def _summarise(job_id: str, result: AnalysisResult) -> AnalysisSummary:
                 energy_ratio=round(energy / total, 5),
                 partial_count=len(partials),
                 exportable_as_midi=track.is_exportable_as_midi,
+                pitch=pitch_label(mean_hz) if track.kind is not TrackKind.RESIDUAL else "",
                 trajectory=downsample_trajectory(track),
             )
         )
@@ -496,6 +510,74 @@ async def track_audio(job_id: str, track_id: int) -> Response:
 
     buffer = io.BytesIO()
     sf.write(buffer, np.asarray(audio), result.sample_rate, format="WAV", subtype="FLOAT")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="audio/wav",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@router.get("/jobs/{job_id}/mixdown")
+async def mixdown(
+    job_id: str,
+    exclude: str = Query(default="", description="Comma-separated track ids to leave out."),
+) -> Response:
+    """Return the sum of every track, optionally minus a few, as one WAV.
+
+    WHY THIS EXISTS — it is the invariant paying rent.
+    -------------------------------------------------
+    The browser used to fetch every track and decode them all before the first
+    Play. At ten minutes a single track is ~106 MB decoded, so forty tracks is
+    several gigabytes and the tab dies.
+
+    But the tracks sum to the original *exactly* (design document section 7),
+    so "play everything" never needed forty buffers -- it needed one, and we
+    already have it. With `exclude`, muting a handful of tracks is the same
+    trick: serve everything-except-those as one buffer, and the client holds
+    two or three buffers instead of forty, however long the audio is.
+
+    Args:
+        job_id: The analysis to mix.
+        exclude: Track ids to omit, e.g. "0,4,9". Unknown ids are ignored
+            rather than rejected -- a stale id from a client that has moved on
+            is not worth failing a playback request over.
+
+    Returns:
+        32-bit float WAV. Float, not PCM, because with nothing excluded this
+        must be byte-identical to what the user uploaded.
+    """
+    result = _require_result(job_id)
+
+    excluded: set[int] = set()
+    for piece in exclude.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        try:
+            excluded.add(int(piece))
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Track ids must be whole numbers."
+            ) from None
+
+    if not excluded:
+        # Nothing to leave out, so the answer is the original by definition.
+        # Serving it directly avoids re-summing forty buffers to arrive back at
+        # a number we already hold -- and guarantees byte-identity rather than
+        # merely achieving it.
+        mixed = np.asarray(result.original)
+    else:
+        mixed = np.zeros(int(result.duration_s * result.sample_rate), dtype=np.float64)
+        for track in result.tracks:
+            if track.track_id in excluded:
+                continue
+            audio = track.audio
+            if audio is not None:
+                mixed += audio
+        mixed = mixed.astype(np.float32)
+
+    buffer = io.BytesIO()
+    sf.write(buffer, mixed, result.sample_rate, format="WAV", subtype="FLOAT")
     return Response(
         content=buffer.getvalue(),
         media_type="audio/wav",

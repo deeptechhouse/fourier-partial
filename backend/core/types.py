@@ -485,6 +485,22 @@ class AnalysisResult:
         return self._params
 
     @property
+    def original(self) -> NDArray[np.float32]:
+        """The analysed audio, as a read-only view.
+
+        Exposed because the API serves it directly for "play everything": the
+        tracks sum to it exactly, so re-summing forty buffers to reproduce a
+        number we already hold would be both slower and less certain.
+
+        Read-only for the same reason `Track.audio` is -- this array is the
+        reference the reconstruction invariant is measured against, and a
+        caller that scribbled on it would make the invariant unfalsifiable.
+        """
+        view = self._original.view()
+        view.flags.writeable = False
+        return view
+
+    @property
     def residual_track(self) -> Track | None:
         """The residual track, if one was produced."""
         return next((t for t in self._tracks if t.kind is TrackKind.RESIDUAL), None)
@@ -547,6 +563,25 @@ def hz_to_midi(frequency_hz: float) -> float:
 def midi_to_hz(midi_note: float) -> float:
     """Convert a (possibly fractional) MIDI note number back to frequency."""
     return A4_HZ * (2.0 ** ((midi_note - A4_MIDI_NOTE) / 12.0))
+
+
+def pitch_label(frequency_hz: float) -> str:
+    """The note name alone, with no cent deviation: 'G4', not 'G4 -1c'.
+
+    This is the grouping key the interface needs. A ten-minute recording
+    surfaces the same pitch many times -- each occurrence is legitimately its
+    own track, because they are separate notes -- but a flat list of forty rows
+    reading "G4 -1c", "G4", "G4 -2c" is far less useful than one collapsible
+    "G4" row that opens into its seven occurrences.
+
+    Deliberately drops the cents: two performances of the same note that differ
+    by a few cents are the same note, and keeping the deviation would split
+    them into separate groups for no reason a musician would recognise.
+    """
+    if frequency_hz <= 0.0:
+        return "unpitched"
+    nearest = round(hz_to_midi(frequency_hz))
+    return f"{_NOTE_NAMES[nearest % 12]}{nearest // 12 - 1}"
 
 
 def note_name(frequency_hz: float) -> str:
