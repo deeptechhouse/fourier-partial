@@ -80,7 +80,7 @@ Implementation is staged; each module's docstring names its phase.
 | 5 | Frontend: transport, canvas, workbench | **Complete** |
 | 6 | `FourierPartial.app` launcher + icon | **Complete** |
 
-All 56 tests pass. Verified end to end: upload → analyse → tracks → audio → WAV/MIDI export, with the reconstruction invariant holding at 2.98e-08 across the HTTP boundary.
+All 164 tests pass (90.75% branch coverage). Verified end to end: upload → analyse → tracks → audio → WAV/MIDI export, with the reconstruction invariant holding at 2.98e-08 across the HTTP boundary — including a full 10-minute file.
 
 ## How to run it
 
