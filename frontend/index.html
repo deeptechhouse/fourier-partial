@@ -18,6 +18,14 @@
        the moment it appears rather than when focus happens to reach it. -->
   <div id="error" class="banner banner-error" role="alert" hidden></div>
 
+  <!-- Informational, NOT a failure. Separate from #error because the two say
+       different things and must not look alike: "1 track is not included" is
+       something to know, and putting it in a red role="alert" banner told users
+       their export had failed when it had succeeded. role="status" rather than
+       "alert" for the same reason — this is worth hearing, not worth
+       interrupting for. -->
+  <div id="notice" class="banner banner-notice" role="status" hidden></div>
+
   <!-- Milestone announcements for screen readers. Visually hidden on purpose:
        everything said here is already on screen somewhere, just not in a place
        that would be announced when it changes. -->

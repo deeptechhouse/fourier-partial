@@ -2132,6 +2132,7 @@ class App {
     this._tracksEl = document.getElementById('tracks');
     this._diagnostics = document.getElementById('diagnostics');
     this._errorBanner = document.getElementById('error');
+    this._noticeBanner = document.getElementById('notice');
     this._announcer = document.getElementById('announcer');
 
     // --- Transport controls -------------------------------------------------
@@ -3107,7 +3108,7 @@ class App {
     const files = info ? Number(info.files) || 0 : 0;
     if (info && files === 0) {
       const nothing = 'There is nothing to export in that format.';
-      this._setBanner(nothing);
+      this._setNotice(nothing);
       this._announce(nothing);
       return;
     }
@@ -3142,14 +3143,26 @@ class App {
     if (summary) summary.textContent = 'Preparing…';
 
     try {
-      const iframe = document.createElement('iframe');
-      iframe.hidden = true;
-      iframe.src = url;
-      document.body.appendChild(iframe);
-      // The iframe only needs to live long enough for the browser to see the
-      // response headers and take over the transfer; removing it afterwards
-      // does not cancel a download already in progress.
-      setTimeout(() => iframe.remove(), 60_000);
+      // A real anchor with a real href, clicked inside the user's own click
+      // handler. Not an iframe, and not a blob.
+      //
+      //   blob  -> buffers the whole archive in memory first; a 3.2 GB export
+      //            never completes.
+      //   iframe-> the browser cannot always tell the navigation apart from an
+      //            automatic one, and blocks it as an unsolicited download.
+      //   anchor-> a download the user visibly asked for, streamed to disk by
+      //            the browser, with its own progress and cancel.
+      //
+      // The `download` attribute names the file; the server's
+      // Content-Disposition supplies the real one and wins, so the two agree.
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = '';
+      link.rel = 'noopener';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
 
       const skipped = Math.max(0, (this._summary ? this._summary.tracks.length : files) - files);
       const message = skipped
@@ -3157,9 +3170,10 @@ class App {
           `${skipped} track${skipped === 1 ? ' is' : 's are'} not included — see MANIFEST.txt inside.`
         : `Preparing ${files} file${files === 1 ? '' : 's'}. Your browser will save it when it is ready.`;
       this._announce(message);
-      if (skipped) this._setBanner(message);
+      this._setNotice(skipped ? message : null);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+      this._setNotice(null);
       this._setBanner(message);
       this._announce(message);
     } finally {
@@ -3288,6 +3302,25 @@ class App {
    *
    * @param {string} message
    */
+  /**
+   * Show something the user should know that is NOT a failure.
+   *
+   * Deliberately a different element and a different colour from _setBanner.
+   * MIDI export always leaves the residual behind, so "1 track is not
+   * included" fires on every MIDI export — and shown in the red error banner,
+   * every successful export looked like a broken one. Passing null clears it.
+   */
+  _setNotice(message) {
+    if (!this._noticeBanner) return;
+    if (!message) {
+      this._noticeBanner.hidden = true;
+      this._noticeBanner.textContent = '';
+      return;
+    }
+    this._noticeBanner.textContent = message;
+    this._noticeBanner.hidden = false;
+  }
+
   _setBanner(message) {
     if (!this._errorBanner) return;
     this._errorBanner.textContent = message || GENERIC_ERROR;
@@ -3295,9 +3328,14 @@ class App {
   }
 
   _clearError() {
-    if (!this._errorBanner) return;
-    this._errorBanner.hidden = true;
-    this._errorBanner.textContent = '';
+    if (this._errorBanner) {
+      this._errorBanner.hidden = true;
+      this._errorBanner.textContent = '';
+    }
+    // The notice goes with it. Every caller of this is starting something new,
+    // and a note about the previous export's skipped tracks hanging over a
+    // fresh analysis would describe a file that is no longer on screen.
+    this._setNotice(null);
   }
 
   /**

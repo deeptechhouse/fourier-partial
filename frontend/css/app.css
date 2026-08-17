@@ -836,3 +836,20 @@ button[aria-pressed="true"] { font-weight: 600; }
   color: var(--paper-dim);
   font-variant-numeric: tabular-nums;
 }
+
+/* An informational banner. Amber, not red.
+ *
+ * This exists because a message like "1 track is not included — see
+ * MANIFEST.txt" was being shown in the error banner, and a red alert saying
+ * something did not happen reads as a failure even when the sentence says
+ * otherwise. MIDI export always leaves the residual behind (it is noise, with
+ * no notes to write), so that message fires on every single MIDI export — and
+ * every one of them looked broken.
+ *
+ * The amber token's own comment already made the distinction: "read this", not
+ * "broken". This is the surface that says it. */
+.banner-notice {
+  background: var(--surface-warn);
+  border-left-color: var(--warn);
+  color: var(--paper);
+}
