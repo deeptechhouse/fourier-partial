@@ -1,0 +1,1286 @@
+<title>What This Is Built From</title>
+
+<style>
+/* ===========================================================================
+   What This Is Built From — the tech stack of fourier_partial
+   A bill of materials: every layer, every dependency, every licence.
+
+   THE DESIGN RULE: colour means LAYER.
+   The two sibling documents use colour for frequency (the design document) and
+   for "this is a tone you can press" (the listening guide). Here it means
+   architectural layer, and nothing else. A coloured thing tells you where in
+   the stack it lives.
+   =========================================================================== */
+
+:root {
+  --sheet:      #f3f4f7;
+  --card:       #ffffff;
+  --card-2:     #e9ebf0;
+  --ink:        #0f1216;
+  --ink-soft:   #474e58;
+  --ink-faint:  #7b828d;
+  --rule:       #d5d9e0;
+  --rule-soft:  #e5e8ed;
+
+  /* Layers, top of the stack to bottom. The only colour that means anything. */
+  --l-ui:       #7a3060;
+  --l-api:      #a1522a;
+  --l-service:  #1f7a6b;
+  --l-domain:   #3d4a8a;
+  --l-tool:     #5a6270;
+
+  --ok:      #1f7a4a;
+  --warn:    #9a6a12;
+  --accent:  #3d4a8a;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  --measure: 40rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sheet:     #0e1013;
+    --card:      #171a20;
+    --card-2:    #1f232b;
+    --ink:       #e9ecf1;
+    --ink-soft:  #a8b0bc;
+    --ink-faint: #767e8b;
+    --rule:      #2b303a;
+    --rule-soft: #21252d;
+
+    --l-ui:      #d982b4;
+    --l-api:     #e2a173;
+    --l-service: #5cc9b4;
+    --l-domain:  #93a2e8;
+    --l-tool:    #9aa4b3;
+
+    --ok:     #5fc98c;
+    --warn:   #e0b256;
+    --accent: #93a2e8;
+  }
+}
+
+:root[data-theme="dark"] {
+  --sheet:     #0e1013;
+  --card:      #171a20;
+  --card-2:    #1f232b;
+  --ink:       #e9ecf1;
+  --ink-soft:  #a8b0bc;
+  --ink-faint: #767e8b;
+  --rule:      #2b303a;
+  --rule-soft: #21252d;
+
+  --l-ui:      #d982b4;
+  --l-api:     #e2a173;
+  --l-service: #5cc9b4;
+  --l-domain:  #93a2e8;
+  --l-tool:    #9aa4b3;
+
+  --ok:     #5fc98c;
+  --warn:   #e0b256;
+  --accent: #93a2e8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 68rem; margin: 0 auto; padding: 0 1.5rem; }
+
+/* --- Masthead ------------------------------------------------------------- */
+
+.masthead { padding: 4.5rem 0 2.5rem; border-bottom: 2px solid var(--ink); }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 1.25rem;
+}
+
+h1 {
+  font-size: clamp(2.1rem, 5.5vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 0 0 1rem;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+
+.standfirst {
+  font-size: 1.1rem;
+  color: var(--ink-soft);
+  max-width: 46rem;
+  margin: 0 0 2rem;
+  text-wrap: pretty;
+}
+
+/* --- Figures at a glance -------------------------------------------------- */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1.5rem 2rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.fig .n {
+  font-family: var(--font-mono);
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  display: block;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.fig .l {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  display: block;
+  margin-top: 0.2rem;
+}
+
+/* --- Sections ------------------------------------------------------------- */
+
+section { padding: 3.5rem 0; border-bottom: 1px solid var(--rule); }
+
+h2 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+  max-width: 24ch;
+  text-wrap: balance;
+}
+
+.sub { color: var(--ink-soft); max-width: var(--measure); margin: 0 0 2rem; }
+
+h3 {
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 2.25rem 0 0.6rem;
+  letter-spacing: -0.01em;
+}
+
+p { margin: 0 0 1rem; max-width: var(--measure); text-wrap: pretty; }
+ul { max-width: var(--measure); padding-left: 1.15rem; }
+li { margin-bottom: 0.5rem; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--card-2);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+strong { font-weight: 650; }
+
+.callout {
+  border-left: 3px solid var(--warn);
+  background: var(--card);
+  padding: 1rem 1.25rem;
+  margin: 1.75rem 0;
+  max-width: var(--measure);
+  border-radius: 0 4px 4px 0;
+}
+.callout p:last-child { margin-bottom: 0; }
+.callout .tag {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+/* --- The stack ------------------------------------------------------------ */
+
+.stack { margin: 0 0 1.5rem; }
+
+.layer {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 1.25rem;
+  align-items: start;
+  width: 100%;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 5px solid var(--layer, var(--rule));
+  border-radius: 4px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background 120ms ease;
+}
+.layer:hover { background: var(--card-2); }
+.layer[aria-expanded="true"] { background: var(--card-2); }
+
+.layer .name {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--layer);
+}
+.layer .role { font-size: 0.86rem; color: var(--ink-soft); }
+.layer .meta {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  margin-top: 0.15rem;
+}
+
+.layer-detail {
+  padding: 0 1.1rem 1rem 1.6rem;
+  margin: -0.35rem 0 0.5rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  border-left: 5px solid var(--layer, var(--rule));
+  background: var(--card-2);
+  border-radius: 0 0 4px 4px;
+}
+.layer-detail[hidden] { display: none; }
+.layer-detail ul { margin: 0.6rem 0 0; max-width: none; }
+.layer-detail code { background: var(--card); }
+
+/* --- Footprint bars ------------------------------------------------------- */
+
+.bars { margin: 1.5rem 0 0; }
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr 4.5rem;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.bar-row .nm { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.bar-track { background: var(--card-2); border-radius: 2px; height: 1.15rem; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 2px; transition: width 400ms ease; }
+.bar-row .sz { text-align: right; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+/* --- Dependency explorer -------------------------------------------------- */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 1.5rem 0 1rem;
+}
+
+button.chip {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--rule);
+  background: var(--card);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  cursor: pointer;
+}
+button.chip:hover { border-color: var(--ink-faint); }
+button.chip[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--sheet);
+  border-color: var(--ink);
+}
+
+.filter-label {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-right: 0.15rem;
+}
+
+.dep-count {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+.deps { display: grid; gap: 0.4rem; }
+
+.dep {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dep-head {
+  display: grid;
+  grid-template-columns: 11rem 1fr 7rem 5.5rem;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 0.95rem;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.dep-head:hover { background: var(--card-2); }
+
+.dep-name {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.dep-name .v { color: var(--ink-faint); font-weight: 400; }
+.dep-role { font-size: 0.83rem; color: var(--ink-soft); }
+.dep-lic, .dep-kind {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+.dep-kind .dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+
+.dep-body {
+  padding: 0 0.95rem 0.95rem;
+  font-size: 0.87rem;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule-soft);
+}
+.dep-body[hidden] { display: none; }
+.dep-body dl { display: grid; grid-template-columns: 8rem 1fr; gap: 0.35rem 1rem; margin: 0.8rem 0 0; }
+.dep-body dt {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-top: 0.15rem;
+}
+.dep-body dd { margin: 0; }
+.dep-body code { background: var(--card-2); }
+
+/* --- Tables --------------------------------------------------------------- */
+
+.table-wrap { overflow-x: auto; margin: 1.25rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+  padding: 0 1rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+td {
+  padding: 0.55rem 1rem 0.55rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  color: var(--ink-soft);
+  vertical-align: top;
+}
+td:first-child { color: var(--ink); font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
+
+/* --- Zero-dependency panel ------------------------------------------------ */
+
+.zero {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+.zero .big {
+  font-family: var(--font-mono);
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--l-ui);
+  line-height: 1;
+}
+.api-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.4rem 1.5rem;
+  margin-top: 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+}
+.api-grid span { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dotted var(--rule); padding-bottom: 0.2rem; }
+.api-grid b { color: var(--ink-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* --- Footer --------------------------------------------------------------- */
+
+footer { padding: 2.5rem 0 4rem; font-size: 0.85rem; color: var(--ink-faint); }
+footer p { max-width: 46rem; }
+
+.theme-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--rule);
+  background: var(--card);
+  color: var(--ink-soft);
+  border-radius: 3px;
+  cursor: pointer;
+  margin-top: 1.25rem;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 700px) {
+  .layer { grid-template-columns: 1fr; gap: 0.35rem; }
+  .dep-head { grid-template-columns: 1fr 5rem; row-gap: 0.3rem; }
+  .dep-role { grid-column: 1 / -1; }
+  .bar-row { grid-template-columns: 6.5rem 1fr 3.5rem; font-size: 0.72rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">fourier_partial · bill of materials</p>
+  <h1>What this is built from</h1>
+  <p class="standfirst">
+    Every library, every licence, and every deliberate omission — measured from
+    the installed environment rather than described from memory. The short
+    version: ten direct dependencies, all permissive, and a browser front end
+    with none at all.
+  </p>
+
+  <div class="figures">
+    <div class="fig"><span class="n" id="f-direct">10</span><span class="l">direct dependencies</span></div>
+    <div class="fig"><span class="n" id="f-runtime">24</span><span class="l">packages that ship</span></div>
+    <div class="fig"><span class="n">0</span><span class="l">front-end dependencies</span></div>
+    <div class="fig"><span class="n">13.5k</span><span class="l">lines we wrote</span></div>
+    <div class="fig"><span class="n">248<span style="font-size:0.6em"> MB</span></span><span class="l">installed weight</span></div>
+    <div class="fig"><span class="n" style="color:var(--ok)">0</span><span class="l">copyleft in shipped code</span></div>
+  </div>
+</header>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>The stack, top to bottom</h2>
+  <p class="sub">
+    Five layers. Dependencies point inward only — the domain at the bottom
+    imports nothing from the project, and everything else depends on it. Click a
+    layer to open it.
+  </p>
+
+  <div class="stack" id="stack"></div>
+
+  <p>
+    The arrangement is deliberate and it is what makes the dependency list
+    short. Because every replaceable concern sits behind a
+    <code>typing.Protocol</code> in <code>backend/core/interfaces.py</code>, swapping
+    the audio decoder or the MIDI writer means writing one class — not
+    threading a new library through the codebase. Libraries stay at the edges.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>What we wrote against what we borrowed</h2>
+  <p class="sub">
+    Installed size, per package. Two libraries account for most of the weight,
+    and it is worth knowing which.
+  </p>
+
+  <div class="bars" id="bars"></div>
+
+  <p style="margin-top:1.5rem">
+    <strong>numpy and scipy are 193 MB of the 248 MB.</strong> Everything else
+    together — the web server, the schema validation, the MIDI writer, the audio
+    codec bindings — is under 12 MB. If the install size ever needs to come
+    down, there is exactly one conversation to have, and it is about the array
+    library.
+  </p>
+
+  <p>
+    For scale, the code in this repository is about <strong>13,500 lines</strong>:
+    5,900 of Python backend, 5,300 of front end, and 2,400 of tests.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>Every dependency, and what it actually does here</h2>
+  <p class="sub">
+    Not what the package is for in general — what it does in <em>this</em> program,
+    and what would break without it. Click any row.
+  </p>
+
+  <div class="controls">
+    <span class="filter-label">Show</span>
+    <button class="chip" data-filter="all" type="button" aria-pressed="true">Everything</button>
+    <button class="chip" data-filter="direct" type="button" aria-pressed="false">Direct only</button>
+    <button class="chip" data-filter="runtime" type="button" aria-pressed="false">Ships to users</button>
+    <button class="chip" data-filter="dev" type="button" aria-pressed="false">Development only</button>
+    <span class="dep-count" id="dep-count"></span>
+  </div>
+
+  <div class="controls" style="margin-top:0">
+    <span class="filter-label">Licence</span>
+    <span id="lic-chips"></span>
+  </div>
+
+  <div class="deps" id="deps"></div>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>Licensing</h2>
+  <p class="sub">
+    The project is MIT. Everything it ships is compatible with that, and nothing
+    shipped is copyleft.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Licence</th><th>Packages</th><th>What it asks of you</th></tr></thead>
+      <tbody id="lic-table"></tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">The one thing worth knowing</span>
+    <p>
+      <strong>certifi is MPL-2.0</strong> — the only non-BSD/MIT/Apache licence
+      anywhere in the tree, and the only weak-copyleft one. It arrives through
+      <code>httpx</code>, which arrives through the test client.
+    </p>
+    <p>
+      It is <strong>development-only and never ships</strong>, so it does not
+      reach a user. Even if it did, MPL-2.0 is file-level copyleft: it would
+      require publishing changes to certifi's own files, and we make none. This
+      is a footnote, not a problem — but a bill of materials that quietly
+      omitted the one unusual licence would not be worth reading.
+    </p>
+  </div>
+
+  <p>
+    Attribution obligations are real but light: BSD and MIT both require the
+    copyright notice and licence text to travel with binary distributions. For a
+    source project run from a checkout, installing from <code>requirements.txt</code>
+    puts each package's licence in <code>site-packages</code> alongside it, which
+    satisfies this. Packaging it into a distributable app would mean collecting
+    those notices into the bundle.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>The front end has no dependencies</h2>
+
+  <div class="zero">
+    <span class="big">0</span>
+    <p style="margin:0.6rem 0 0">
+      No framework. No bundler. No <code>node_modules</code>, no
+      <code>package.json</code>, no build step. 5,300 lines of plain ES modules
+      that the browser loads directly, exactly as written.
+    </p>
+    <p style="margin:0.8rem 0 0; font-size:0.9rem">
+      Everything it needs is already in the browser:
+    </p>
+    <div class="api-grid" id="apis"></div>
+  </div>
+
+  <p>
+    This is not asceticism. The front end's hard problem is
+    <strong>sample-accurate playback of many tracks at once</strong>, and the
+    Web Audio API solves it natively — every source scheduled at one shared
+    <code>AudioContext</code> timestamp starts on exactly the same sample. A
+    framework would not have helped with that, and would have added a build step
+    between the source and the thing that runs.
+  </p>
+
+  <p>
+    The practical payoff: you can open <code>frontend/js/app.js</code>, change a
+    line, and reload. There is no compile, no watch process, and no source map
+    standing between what you wrote and what executes.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>The desktop app uses nothing but macOS</h2>
+  <p class="sub">
+    <code>FourierPartial.app</code> is a real application bundle built entirely
+    from tools already on every Mac — no py2app, no PyInstaller, nothing
+    downloaded.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tool</th><th>Ships with macOS</th><th>What it does here</th></tr></thead>
+      <tbody>
+        <tr><td>osacompile</td><td>/usr/bin</td><td>Compiles the AppleScript applet — the only bundle type that can receive a second click</td></tr>
+        <tr><td>osascript</td><td>/usr/bin</td><td>Native error dialogs when the environment is missing</td></tr>
+        <tr><td>sips + iconutil</td><td>/usr/bin</td><td>Turn a generated PNG into a multi-resolution <code>.icns</code></td></tr>
+        <tr><td>plutil</td><td>/usr/bin</td><td>Validates <code>Info.plist</code></td></tr>
+        <tr><td>curl</td><td>/usr/bin</td><td>Polls <code>/api/health</code> so the browser opens only once the server answers</td></tr>
+        <tr><td>open</td><td>/usr/bin</td><td>Launches the browser at whichever port was free</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">Why an AppleScript applet</span>
+    <p>
+      It began as a shell script in a bundle, which was simpler and wrong.
+      macOS will not run a bundle's executable again while that bundle is
+      already running — it sends the running instance a <em>reopen</em> event,
+      and a shell script has no way to receive one. So the second click did
+      nothing at all: no window, no error. An applet receives the event. The
+      logic still lives in shell, in <code>scripts/fp_launch.sh</code>; the
+      applet is only the event plumbing.
+    </p>
+  </div>
+
+  <p>
+    The icon is generated by a Python script that writes the PNG itself with
+    <code>zlib</code> and <code>struct</code>, because Pillow is not a
+    dependency and adding an imaging library to draw one icon would be a poor
+    trade.
+  </p>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>What we deliberately did not use</h2>
+  <p class="sub">
+    A dependency list is only half the story. These are the things that were
+    considered and rejected, with the reasons.
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Not used</th><th>The obvious case for it</th><th>Why not</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>librosa</td>
+          <td>The standard Python audio-analysis library. Resampling, f0 estimation, STFT helpers.</td>
+          <td><strong>Removed after being specified.</strong> It was wanted for two things: <code>scipy.signal.resample_poly</code> covers the first and the grouper does its own harmonic search for the second. Dropping it removes the numba/llvmlite chain, which has no prebuilt wheels for macOS 12 on Intel and compiles from source for hours.</td>
+        </tr>
+        <tr>
+          <td>React / Vue / Svelte</td>
+          <td>5,300 lines of front end is not trivial.</td>
+          <td>The hard part is audio scheduling, which no framework helps with. A framework would add a build step between source and runtime for state management this app barely needs.</td>
+        </tr>
+        <tr>
+          <td>A bundler</td>
+          <td>Standard practice.</td>
+          <td>ES modules load natively. Three files, no transpilation target older than the browsers Web Audio requires anyway.</td>
+        </tr>
+        <tr>
+          <td>A database</td>
+          <td>Analyses have state.</td>
+          <td>That state is deliberately ephemeral — uploaded audio is user data with no reason to persist. An in-memory store with TTL expiry is the correct shape, and it sits behind a <code>JobStore</code> protocol if Redis is ever needed.</td>
+        </tr>
+        <tr>
+          <td>Docker</td>
+          <td>Reproducibility.</td>
+          <td>The target is a double-clickable Mac app. A container would put a VM between the user and their audio files for no gain.</td>
+        </tr>
+        <tr>
+          <td>Pillow</td>
+          <td>Generating the app icon.</td>
+          <td>One icon does not justify an imaging library. The PNG is written directly with <code>zlib</code> and <code>struct</code>.</td>
+        </tr>
+        <tr>
+          <td>An FFT library (pyFFTW, etc.)</td>
+          <td>Speed.</td>
+          <td><code>numpy.fft</code> is fast enough: a ten-minute analysis takes about 50 seconds, and the transform is not the bottleneck — rendering is.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<section>
+  <h2>Language, tooling, reproducing it</h2>
+
+  <h3>Pinned exactly</h3>
+  <p>
+    Python <strong>3.13.12</strong>, recorded in <code>.python-version</code>.
+    Every dependency is pinned to an exact version — no floating ranges, no
+    <code>~=</code>. Each was verified to exist on PyPI before being added, which
+    is the cheap defence against <em>slopsquatting</em>: a plausible-sounding
+    package name that an attacker has registered because a generated
+    requirements file invented it.
+  </p>
+
+  <h3>Quality tooling</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tool</th><th>Role</th><th>Enforced where</th></tr></thead>
+      <tbody>
+        <tr><td>pytest</td><td>169 tests</td><td>CI, and a 90% branch-coverage gate</td></tr>
+        <tr><td>pytest-cov</td><td>Coverage measurement</td><td><code>--cov-fail-under=90</code></td></tr>
+        <tr><td>httpx</td><td>ASGI test client, for real HTTP round trips</td><td>Test suite only</td></tr>
+        <tr><td>black</td><td>Formatting</td><td>pre-commit, CI</td></tr>
+        <tr><td>ruff</td><td>Linting, including bandit security rules</td><td>pre-commit, CI</td></tr>
+        <tr><td>mypy</td><td>Strict type checking</td><td>pre-commit, CI</td></tr>
+        <tr><td>detect-secrets</td><td>Blocks committed credentials</td><td>pre-commit</td></tr>
+        <tr><td>pip-audit</td><td>Dependency vulnerability scan</td><td>CI, fails on high/critical</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="tag">Honest note</span>
+    <p>
+      <strong>black, ruff, mypy, pre-commit and detect-secrets are declared in
+      <code>requirements-dev.txt</code> and enforced in CI, but are not currently
+      installed in this working environment.</strong> The test tooling is. If
+      you are reading this expecting <code>ruff check</code> to run locally, install
+      the dev requirements first.
+    </p>
+  </div>
+
+  <h3>Standard library, doing a lot of the work</h3>
+  <p>
+    The backend uses <strong>18 standard-library modules</strong> and adds
+    nothing to get them: <code>threading</code> and <code>asyncio</code> for the
+    job model, <code>dataclasses</code> and <code>enum</code> for the domain types,
+    <code>pathlib</code>, <code>logging</code>, <code>math</code>, <code>socket</code>
+    for port selection, <code>uuid</code>, <code>io</code>, <code>tempfile</code>,
+    <code>shutil</code>, <code>bisect</code>, <code>collections</code>,
+    <code>contextlib</code>, <code>time</code>, <code>typing</code> and
+    <code>__future__</code>.
+  </p>
+
+  <h3>Starting from nothing</h3>
+  <p>
+    On a fresh machine — including moving from Intel to Apple Silicon, where the
+    compiled packages must be reinstalled — the whole setup is one command:
+  </p>
+  <p><code>./setup.sh</code></p>
+  <p>
+    It finds a suitable Python, rebuilds the virtual environment, installs with
+    <code>--only-binary=:all:</code> so a surprise source build fails loudly
+    instead of running for an hour, and smoke-tests that the backend imports.
+  </p>
+</section>
+
+<footer>
+  <p>
+    <strong>What This Is Built From</strong> — the bill of materials for
+    <em>fourier_partial</em>. Every figure here was measured from the installed
+    environment on 16 August 2026, not recalled: package versions and licences
+    from <code>importlib.metadata</code>, sizes from the file system, line counts
+    from the repository, browser API usage counted in the source.
+  </p>
+  <p style="margin-top:0.75rem">
+    Companion documents: the technical design document, for how it works
+    internally, and <em>Every Sound Is a Chord</em>, for what it does and why
+    anyone would want it.
+  </p>
+  <button class="theme-btn" id="theme-toggle" type="button">Switch light / dark</button>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // =========================================================================
+  // The data
+  // =========================================================================
+  // Measured, not remembered. Versions and licences came from
+  // importlib.metadata in the live environment; sizes from du; the "ships"
+  // flag from resolving the dependency closure of requirements.txt only.
+
+  const LAYERS = [
+    {
+      id: 'ui', name: 'frontend/', role: 'Browser workbench — waveforms, transport, export UI',
+      meta: '5,300 lines · 3 JS modules · 0 dependencies',
+      detail: `<p>Plain ES modules loaded straight by the browser. Owns visualisation and
+        sample-accurate multi-track playback.</p>
+        <ul>
+          <li><code>app.js</code> — upload, job progress, workbench rendering, playback strategy</li>
+          <li><code>transport.js</code> — Web Audio scheduling; every source starts at one shared timestamp</li>
+          <li><code>waveform.js</code> — canvas drawing of pitch trajectories</li>
+        </ul>`,
+    },
+    {
+      id: 'api', name: 'backend/api/', role: 'HTTP + WebSocket boundary, background jobs',
+      meta: '874 lines · FastAPI, uvicorn, pydantic',
+      detail: `<p>The only layer that talks to the outside world, so it owns validation,
+        rate limiting and error sanitisation. It calls services; it never touches DSP directly.</p>
+        <ul>
+          <li>Upload validation: size ceiling, then magic bytes, then duration</li>
+          <li>Analyses run on a worker thread with a WebSocket progress feed</li>
+          <li>No exception text ever reaches a client — every error carries a separate user-safe message</li>
+        </ul>`,
+    },
+    {
+      id: 'service', name: 'analysis/ · synthesis/ · export/', role: 'The Fourier work, resynthesis, and file writing',
+      meta: '3,231 lines · numpy, scipy, soundfile, mido',
+      detail: `<p>Where the libraries actually get used, and almost the only place they do.</p>
+        <ul>
+          <li><code>analysis/</code> — STFT, sub-bin peak picking, partial tracking, harmonic grouping</li>
+          <li><code>synthesis/</code> — the oscillator bank, and the exact subtraction that defines the residual</li>
+          <li><code>export/</code> — WAV via soundfile, MIDI via mido</li>
+        </ul>`,
+    },
+    {
+      id: 'domain', name: 'backend/core/', role: 'Types, contracts, errors — depends on nothing',
+      meta: '954 lines · numpy only',
+      detail: `<p>The centre of the ports-and-adapters arrangement. If you ever find an import
+        from <code>analysis</code> or <code>api</code> in here, a dependency arrow has been reversed.</p>
+        <ul>
+          <li><code>types.py</code> — Peak, Partial, Track, AnalysisResult, AnalysisParams</li>
+          <li><code>interfaces.py</code> — the Protocols every replaceable part implements</li>
+          <li><code>errors.py</code> — one hierarchy, each error carrying user-safe text</li>
+        </ul>`,
+    },
+    {
+      id: 'tool', name: 'tooling', role: 'Tests, linting, CI, the macOS app bundle',
+      meta: '2,400 test lines · 169 tests · 90% coverage gate',
+      detail: `<p>None of this ships to a user, but all of it decides whether what ships works.</p>
+        <ul>
+          <li>pytest with a branch-coverage gate that fails the build under 90%</li>
+          <li>GitHub Actions: lint, type-check, test, dependency audit, import smoke test</li>
+          <li><code>FourierPartial.app</code> — an AppleScript applet built with stock macOS tools</li>
+        </ul>`,
+    },
+  ];
+
+  // size: installed megabytes. null where it is a rounding error.
+  const DEPS = [
+    { n: 'numpy', v: '2.5.2', lic: 'BSD-3-Clause', direct: true, ships: true, layer: 'domain', size: 68,
+      role: 'Arrays, FFT, and the oscillator bank',
+      here: 'Every numeric operation in the project. <code>np.fft.rfft</code> is the Fourier transform itself, in <code>analysis/stft.py</code>; the resynthesis in <code>synthesis/oscillator_bank.py</code> is numpy vector arithmetic; the reconstruction invariant is a numpy subtraction.',
+      without: 'Nothing works. This is not a swappable adapter — the domain types are built on numpy arrays and the DSP is numpy from end to end.' },
+
+    { n: 'scipy', v: '1.18.0', lic: 'BSD-3-Clause', direct: true, ships: true, layer: 'service', size: 125,
+      role: 'Two functions, and they are both load-bearing',
+      here: '<code>scipy.signal.get_window(\'blackmanharris\')</code> in <code>analysis/stft.py</code>, and <code>scipy.signal.resample_poly</code> in <code>audio_io/loader.py</code>. That is the entire usage.',
+      without: 'The window could be written by hand in a dozen lines. Resampling could not: <code>resample_poly</code> applies a proper anti-aliasing filter, and cheap resampling folds energy above the new Nyquist limit back into the audible band as aliases — peaks that look exactly like real tones and are not. For a tool whose job is to point at a peak and say "there is a tone here", that is the worst possible failure.' },
+
+    { n: 'soundfile', v: '0.14.0', lic: 'BSD-3-Clause', direct: true, ships: true, layer: 'service', size: 1.1,
+      role: 'Reading and writing audio files',
+      here: 'Decoding uploads in <code>audio_io/loader.py</code>, writing WAV exports in <code>export/wav_exporter.py</code>, and serving per-track audio to the browser from <code>api/routes.py</code>.',
+      without: 'No audio in or out. It bundles <strong>libsndfile 1.2.2</strong>, which is where WAV, FLAC, AIFF and OGG support actually comes from — and note that MP3 support is build-dependent, which the loader handles explicitly rather than letting a libsndfile error escape.' },
+
+    { n: 'mido', v: '1.3.3', lic: 'MIT', direct: true, ships: true, layer: 'service', size: 0.5,
+      role: 'Writing MIDI files',
+      here: 'All of <code>export/midi_exporter.py</code>: message construction, delta-time conversion, and the RPN sequence that widens the pitch-bend range.',
+      without: 'MIDI export goes. The format is simple enough to write by hand, but mido handles the part that is easy to get wrong — MIDI stores delta times, not absolute ones, and interleaving several partials makes hand-rolled deltas a reliable source of bugs.' },
+
+    { n: 'fastapi', v: '0.141.1', lic: 'MIT', direct: true, ships: true, layer: 'api', size: 1.6,
+      role: 'HTTP routing, validation, WebSockets',
+      here: 'Route definitions, request validation, and the progress WebSocket in <code>api/routes.py</code>. Also generates the OpenAPI docs at <code>/docs</code> for free.',
+      without: 'The interface layer would need rewriting against Starlette directly — which is what FastAPI is built on, and which is already installed underneath it.' },
+
+    { n: 'uvicorn', v: '0.52.3', lic: 'BSD-3-Clause', direct: true, ships: true, layer: 'api', size: 0.8,
+      role: 'The ASGI server that actually listens',
+      here: 'Started from <code>backend/main.py</code>, on port 8420 or the next free one.',
+      without: 'Nothing serves. Swappable for any ASGI server (hypercorn, daphne) with a one-line change.' },
+
+    { n: 'websockets', v: '17.0.1', lic: 'BSD-3-Clause', direct: true, ships: true, layer: 'api', size: 1.7,
+      role: 'The WebSocket protocol implementation uvicorn needs',
+      here: 'Never imported by our code. uvicorn uses it to serve <code>/api/jobs/{id}/events</code>.',
+      without: '<strong>The progress socket silently 404s.</strong> Bare uvicorn ships no WebSocket implementation, so the upgrade never matches a route. This was a real bug: the front end has a polling fallback, which hid it completely until the server log was read. It is a direct dependency precisely so nobody can conclude it is optional.' },
+
+    { n: 'pydantic', v: '2.13.4', lic: 'MIT', direct: true, ships: true, layer: 'api', size: 4.0,
+      role: 'Request and response schemas',
+      here: 'The response models in <code>api/routes.py</code> — <code>TrackSummary</code>, <code>AnalysisSummary</code>, <code>JobStatusResponse</code>. Validation happens at the boundary, so bad shapes never reach the services.',
+      without: 'Hand-written serialisation and validation. Note its core is compiled Rust (<code>pydantic-core</code>), which is why it is 4 MB rather than 400 KB.' },
+
+    { n: 'pydantic-settings', v: '2.15.0', lic: 'MIT', direct: true, ships: true, layer: 'api', size: 0.2,
+      role: 'Environment-backed configuration',
+      here: 'The <code>Settings</code> class in <code>backend/config.py</code>, which reads <code>FP_*</code> environment variables and validates them at startup — including refusing a wildcard CORS origin outright.',
+      without: 'Reading <code>os.environ</code> by hand and validating it manually.' },
+
+    { n: 'python-multipart', v: '0.0.32', lic: 'Apache-2.0', direct: true, ships: true, layer: 'api', size: 0.2,
+      role: 'Parsing uploaded files',
+      here: 'Required by FastAPI to accept <code>multipart/form-data</code>. Without it the upload endpoint raises at import time.',
+      without: 'No file uploads, which is the only way audio gets in.' },
+
+    { n: 'starlette', v: '1.6.0', lic: 'BSD-3-Clause', direct: false, ships: true, layer: 'api', size: 0.7,
+      role: 'The ASGI toolkit FastAPI is built on',
+      here: 'Routing, middleware and the <code>TestClient</code> the test suite drives. Arrives with FastAPI.',
+      without: 'FastAPI does not exist without it.' },
+
+    { n: 'pydantic-core', v: '2.46.4', lic: 'MIT', direct: false, ships: true, layer: 'api', size: 3.2,
+      role: 'Pydantic\'s validation engine, compiled from Rust',
+      here: 'Does the actual validating. The reason pydantic v2 is fast.',
+      without: 'Arrives with pydantic; not separable.' },
+
+    { n: 'cffi', v: '2.1.1', lic: 'MIT-0', direct: false, ships: true, layer: 'service', size: 1.0,
+      role: 'The C foreign-function bridge soundfile uses',
+      here: 'How Python calls into libsndfile. Pulls in <code>pycparser</code>.',
+      without: 'soundfile cannot reach libsndfile.' },
+
+    { n: 'anyio', v: '4.14.2', lic: 'MIT', direct: false, ships: true, layer: 'api', size: 0.6,
+      role: 'Async compatibility layer',
+      here: 'Used by Starlette to run sync route handlers in a thread pool.',
+      without: 'Arrives with Starlette.' },
+
+    { n: 'h11', v: '0.16.0', lic: 'MIT', direct: false, ships: true, layer: 'api', size: 0.3,
+      role: 'Pure-Python HTTP/1.1 state machine',
+      here: 'uvicorn\'s default HTTP protocol implementation.',
+      without: 'Arrives with uvicorn.' },
+
+    { n: 'click', v: '8.4.2', lic: 'BSD-3-Clause', direct: false, ships: true, layer: 'api', size: 0.4,
+      role: 'Command-line parsing',
+      here: 'uvicorn\'s CLI. We start uvicorn programmatically, so this is along for the ride.',
+      without: 'Arrives with uvicorn.' },
+
+    { n: 'python-dotenv', v: '1.2.2', lic: 'BSD-3-Clause', direct: false, ships: true, layer: 'api', size: 0.1,
+      role: 'Reads .env files',
+      here: 'How <code>pydantic-settings</code> loads <code>.env</code>.',
+      without: 'Environment variables would have to be set in the shell.' },
+
+    { n: 'typing-extensions', v: '4.16.0', lic: 'PSF-2.0', direct: false, ships: true, layer: 'domain', size: 0.15,
+      role: 'Backported typing features',
+      here: 'Depended on by pydantic, FastAPI and uvicorn.',
+      without: 'Arrives with all three.' },
+
+    { n: 'annotated-types', v: '0.8.0', lic: 'MIT', direct: false, ships: true, layer: 'api', size: 0.05,
+      role: 'Constraint metadata for type hints',
+      here: 'How pydantic expresses <code>ge=0.0, le=1.0</code> on a field.',
+      without: 'Arrives with pydantic.' },
+
+    { n: 'typing-inspection', v: '0.4.4', lic: 'MIT', direct: false, ships: true, layer: 'api', size: 0.05,
+      role: 'Runtime inspection of type hints',
+      here: 'Used by pydantic to read model annotations.',
+      without: 'Arrives with pydantic.' },
+
+    { n: 'annotated-doc', v: '0.0.5', lic: 'MIT', direct: false, ships: true, layer: 'api', size: 0.02,
+      role: 'Documentation metadata in annotations',
+      here: 'A FastAPI dependency.',
+      without: 'Arrives with FastAPI.' },
+
+    { n: 'idna', v: '3.18', lic: 'BSD-3-Clause', direct: false, ships: true, layer: 'api', size: 0.35,
+      role: 'International domain name handling',
+      here: 'Arrives via anyio.',
+      without: 'Arrives with anyio.' },
+
+    { n: 'pycparser', v: '3.0', lic: 'BSD-3-Clause', direct: false, ships: true, layer: 'service', size: 0.9,
+      role: 'C parser, used by cffi',
+      here: 'Part of how soundfile binds to libsndfile.',
+      without: 'Arrives with cffi.' },
+
+    { n: 'packaging', v: '26.3', lic: 'Apache-2.0 OR BSD-2-Clause', direct: false, ships: true, layer: 'tool', size: 0.4,
+      role: 'Version and requirement parsing',
+      here: 'A shared utility several packages depend on.',
+      without: 'Arrives with others.' },
+
+    { n: 'pytest', v: '9.1.1', lic: 'MIT', direct: true, ships: false, layer: 'tool', size: 3.5,
+      role: 'The test runner — 169 tests',
+      here: 'Everything in <code>tests/</code>, including the reconstruction invariant that asserts the tracks sum back to the original exactly.',
+      without: 'No automated verification. Never shipped.' },
+
+    { n: 'pytest-cov', v: '7.1.0', lic: 'MIT', direct: true, ships: false, layer: 'tool', size: 0.1,
+      role: 'Coverage measurement',
+      here: 'Enforces <code>--cov-fail-under=90</code> on branch coverage. Currently 90.75%.',
+      without: 'The coverage gate goes. Never shipped.' },
+
+    { n: 'pytest-asyncio', v: '1.4.0', lic: 'Apache-2.0', direct: true, ships: false, layer: 'tool', size: 0.1,
+      role: 'Async test support',
+      here: 'Lets the API tests await route handlers directly.',
+      without: 'Async tests would need manual event-loop handling. Never shipped.' },
+
+    { n: 'httpx', v: '0.28.1', lic: 'BSD-3-Clause', direct: true, ships: false, layer: 'tool', size: 1.0,
+      role: 'HTTP client behind the ASGI test client',
+      here: 'How the tests make real requests against the app without a running server. Pulls in <code>httpcore</code> and <code>certifi</code>.',
+      without: 'API tests could not exercise the real HTTP layer. Never shipped.' },
+
+    { n: 'coverage', v: '7.15.4', lic: 'Apache-2.0', direct: false, ships: false, layer: 'tool', size: 1.4,
+      role: 'The measurement engine under pytest-cov',
+      here: 'Produces the branch-coverage numbers and <code>coverage.xml</code> for CI.',
+      without: 'Arrives with pytest-cov. Never shipped.' },
+
+    { n: 'certifi', v: '2026.7.22', lic: 'MPL-2.0', direct: false, ships: false, layer: 'tool', size: 0.3,
+      role: 'CA certificate bundle',
+      here: 'Arrives via httpx. Never actually used — the test client talks to the app in-process, not over TLS.',
+      without: 'Arrives with httpx. <strong>The only weak-copyleft licence in the tree, and it never ships.</strong>' },
+
+    { n: 'httpcore', v: '1.0.9', lic: 'BSD-3-Clause', direct: false, ships: false, layer: 'tool', size: 0.5,
+      role: 'The transport layer under httpx',
+      here: 'Arrives with httpx.', without: 'Arrives with httpx. Never shipped.' },
+
+    { n: 'pluggy', v: '1.6.0', lic: 'MIT', direct: false, ships: false, layer: 'tool', size: 0.1,
+      role: 'pytest\'s plugin system',
+      here: 'Arrives with pytest.', without: 'Arrives with pytest. Never shipped.' },
+
+    { n: 'iniconfig', v: '2.3.0', lic: 'MIT', direct: false, ships: false, layer: 'tool', size: 0.02,
+      role: 'INI parsing for pytest config',
+      here: 'Arrives with pytest.', without: 'Arrives with pytest. Never shipped.' },
+
+    { n: 'pygments', v: '2.20.0', lic: 'BSD-2-Clause', direct: false, ships: false, layer: 'tool', size: 4.2,
+      role: 'Syntax highlighting in test output',
+      here: 'Colourises tracebacks. Arrives with pytest.',
+      without: 'Arrives with pytest. Never shipped.' },
+  ];
+
+  const BROWSER_APIS = [
+    ['Web Audio API', 'playback'], ['AudioContext', '20 uses'], ['GainNode', '9 uses'],
+    ['AudioBufferSourceNode', '4 uses'], ['decodeAudioData', '4 uses'], ['Canvas 2D', 'drawing'],
+    ['fetch', '50 uses'], ['WebSocket', '5 uses'], ['FormData', 'upload'],
+    ['ResizeObserver', '3 uses'], ['requestAnimationFrame', '5 uses'], ['URLSearchParams', '3 uses'],
+  ];
+
+  const LICENCES = [
+    ['MIT', 'Keep the notice. Do anything else.'],
+    ['BSD-3-Clause', 'Keep the notice. Do not imply endorsement.'],
+    ['Apache-2.0', 'Keep the notice, state changes, includes a patent grant.'],
+    ['BSD-2-Clause', 'Keep the notice.'],
+    ['MIT-0', 'MIT with the attribution requirement removed.'],
+    ['PSF-2.0', 'The Python Software Foundation licence. Permissive.'],
+    ['MPL-2.0', 'Weak copyleft: publish changes to the licensed files themselves. Development only here.'],
+    ['Apache-2.0 OR BSD-2-Clause', 'Dual licensed — take either.'],
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // =========================================================================
+  // Layer stack
+  // =========================================================================
+
+  (function stack() {
+    const host = $('stack');
+    LAYERS.forEach((layer, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'layer';
+      btn.style.setProperty('--layer', `var(--l-${layer.id})`);
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-controls', 'layer-' + i);
+      btn.innerHTML =
+        `<span class="name">${esc(layer.name)}</span>` +
+        `<span><span class="role">${esc(layer.role)}</span>` +
+        `<span class="meta">${esc(layer.meta)}</span></span>`;
+
+      const detail = document.createElement('div');
+      detail.className = 'layer-detail';
+      detail.id = 'layer-' + i;
+      detail.hidden = true;
+      detail.style.setProperty('--layer', `var(--l-${layer.id})`);
+      detail.innerHTML = layer.detail;
+
+      btn.addEventListener('click', () => {
+        const open = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+        detail.hidden = open;
+      });
+
+      host.appendChild(btn);
+      host.appendChild(detail);
+    });
+  }());
+
+  // =========================================================================
+  // Footprint bars
+  // =========================================================================
+
+  (function bars() {
+    const host = $('bars');
+    // Only the packages big enough to matter; the long tail is noise here.
+    const shown = DEPS.filter((d) => d.size >= 0.4).sort((a, b) => b.size - a.size);
+    const max = shown[0].size;
+    shown.forEach((d) => {
+      const row = document.createElement('div');
+      row.className = 'bar-row';
+      row.innerHTML =
+        `<span class="nm">${esc(d.n)}</span>` +
+        `<span class="bar-track"><span class="bar-fill" style="width:0%"></span></span>` +
+        `<span class="sz">${d.size >= 1 ? d.size + ' MB' : Math.round(d.size * 1000) + ' KB'}</span>`;
+      const fill = row.querySelector('.bar-fill');
+      fill.style.background = `var(--l-${d.layer})`;
+      host.appendChild(row);
+      // Animate in, so the two dominant bars register as dominant.
+      requestAnimationFrame(() => {
+        fill.style.width = Math.max(1.5, (d.size / max) * 100) + '%';
+      });
+    });
+  }());
+
+  // =========================================================================
+  // Dependency explorer
+  // =========================================================================
+
+  (function explorer() {
+    const host = $('deps');
+    const countEl = $('dep-count');
+    let scope = 'all';
+    let licence = null;
+
+    // Licence filter chips, built from the data so they cannot drift from it.
+    const licHost = $('lic-chips');
+    const licences = [...new Set(DEPS.map((d) => d.lic))].sort();
+    const licButtons = licences.map((l) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = `${l} (${DEPS.filter((d) => d.lic === l).length})`;
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => {
+        licence = licence === l ? null : l;
+        licButtons.forEach((other, i) =>
+          other.setAttribute('aria-pressed', licences[i] === licence ? 'true' : 'false')
+        );
+        render();
+      });
+      licHost.appendChild(b);
+      return b;
+    });
+
+    function matches(d) {
+      if (licence && d.lic !== licence) return false;
+      if (scope === 'direct') return d.direct;
+      if (scope === 'runtime') return d.ships;
+      if (scope === 'dev') return !d.ships;
+      return true;
+    }
+
+    function render() {
+      const list = DEPS.filter(matches);
+      host.textContent = '';
+
+      countEl.textContent =
+        `${list.length} of ${DEPS.length} shown · ` +
+        `${list.filter((d) => d.ships).length} ship to users`;
+
+      list.forEach((d, i) => {
+        const card = document.createElement('div');
+        card.className = 'dep';
+
+        const head = document.createElement('button');
+        head.type = 'button';
+        head.className = 'dep-head';
+        head.setAttribute('aria-expanded', 'false');
+        head.setAttribute('aria-controls', 'dep-body-' + i);
+        head.innerHTML =
+          `<span class="dep-name">${esc(d.n)} <span class="v">${esc(d.v)}</span></span>` +
+          `<span class="dep-role">${esc(d.role)}</span>` +
+          `<span class="dep-lic">${esc(d.lic)}</span>` +
+          `<span class="dep-kind"><span class="dot" style="background:var(--l-${d.layer})"></span>` +
+          `${d.ships ? 'ships' : 'dev only'}</span>`;
+
+        const body = document.createElement('div');
+        body.className = 'dep-body';
+        body.id = 'dep-body-' + i;
+        body.hidden = true;
+        body.innerHTML =
+          `<dl>` +
+          `<dt>Used here</dt><dd>${d.here}</dd>` +
+          `<dt>Without it</dt><dd>${d.without}</dd>` +
+          `<dt>How it got in</dt><dd>${d.direct
+            ? 'Named directly in <code>requirements' + (d.ships ? '' : '-dev') + '.txt</code>.'
+            : 'Pulled in as a dependency of something else.'}</dd>` +
+          `<dt>Installed</dt><dd>${d.size >= 1 ? d.size + ' MB' : Math.round(d.size * 1000) + ' KB'}</dd>` +
+          `</dl>`;
+
+        head.addEventListener('click', () => {
+          const open = head.getAttribute('aria-expanded') === 'true';
+          head.setAttribute('aria-expanded', open ? 'false' : 'true');
+          body.hidden = open;
+        });
+
+        card.appendChild(head);
+        card.appendChild(body);
+        host.appendChild(card);
+      });
+    }
+
+    document.querySelectorAll('.chip[data-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        scope = btn.dataset.filter;
+        document.querySelectorAll('.chip[data-filter]').forEach((b) =>
+          b.setAttribute('aria-pressed', b === btn ? 'true' : 'false')
+        );
+        render();
+      });
+    });
+
+    render();
+
+    // Headline figures, derived from the same array as the table, so a data
+    // edit cannot leave the summary at the top contradicting the detail below.
+    $('f-direct').textContent = DEPS.filter((d) => d.direct && d.ships).length;
+    $('f-runtime').textContent = DEPS.filter((d) => d.ships).length;
+  }());
+
+  // =========================================================================
+  // Licence table and browser API list
+  // =========================================================================
+
+  (function licences() {
+    const body = $('lic-table');
+    LICENCES.forEach(([name, asks]) => {
+      const used = DEPS.filter((d) => d.lic === name);
+      if (!used.length) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td>${esc(name)}</td>` +
+        `<td>${used.length} — ${used.map((d) => esc(d.n)).join(', ')}</td>` +
+        `<td>${esc(asks)}</td>`;
+      body.appendChild(tr);
+    });
+  }());
+
+  (function apis() {
+    const host = $('apis');
+    BROWSER_APIS.forEach(([name, note]) => {
+      const s = document.createElement('span');
+      s.innerHTML = `${esc(name)} <b>${esc(note)}</b>`;
+      host.appendChild(s);
+    });
+  }());
+
+  // =========================================================================
+  // Theme
+  // =========================================================================
+
+  $('theme-toggle').addEventListener('click', () => {
+    const root = document.documentElement;
+    const explicit = root.getAttribute('data-theme');
+    const dark = explicit
+      ? explicit === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+}());
+</script>
