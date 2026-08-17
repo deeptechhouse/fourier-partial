@@ -264,7 +264,31 @@ class AnalysisParams:
                 "min_partial_duration_ms": 120.0,
             }
 
-        return cls(**{**tuned, **overrides})  # type: ignore[arg-type]
+        merged: dict[str, object] = {**tuned, **overrides}
+
+        # Make the hop fit the window rather than refusing the combination.
+        #
+        # The tier raises the hop for long audio (2048 at ten minutes), and a
+        # user or preset may independently ask for a small window. Neither is
+        # wrong, but a hop larger than its window is meaningless, and the pair
+        # would raise -- so a perfectly reasonable preset like "short window for
+        # sharp attacks" became unusable on exactly the long files the tier
+        # exists for.
+        #
+        # Only adjusted when the hop came from the TIER and the window came
+        # from the caller. If the caller set both and they conflict, that is a
+        # genuine contradiction and validation should still say so rather than
+        # quietly changing what was asked for.
+        if "window_size" in overrides and "hop_size" not in overrides:
+            window = int(merged["window_size"])  # type: ignore[arg-type]
+            # `merged` holds only the tier and the overrides, so a short file --
+            # whose tier is empty -- has no hop_size key at all. Fall back to
+            # the field's own default rather than assuming one is present.
+            hop = int(merged.get("hop_size", cls.__dataclass_fields__["hop_size"].default))  # type: ignore[arg-type]
+            if hop > window:
+                merged["hop_size"] = window
+
+        return cls(**merged)  # type: ignore[arg-type]
 
 
 # =============================================================================

@@ -12,6 +12,9 @@ API SURFACE
     GET    /api/jobs/{job_id}/export/estimate    how big each format would be
     GET    /api/jobs/{job_id}/mixdown            ?exclude=ids -> all tracks, minus those
     GET    /api/settings/schema                  every adjustable setting, described
+    GET    /api/presets                          saved settings combinations
+    PUT    /api/presets/{name}                   save one
+    DELETE /api/presets/{name}                   remove one (built-ins are read-only)
     POST   /api/jobs/{job_id}/reanalyze          same audio, different settings
     GET    /api/health                           liveness
 
@@ -58,6 +61,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from backend.analysis.pipeline import downsample_trajectory
 from backend.api.jobs import InMemoryJobStore, JobState
+from backend.api.presets import PresetError, PresetStore
 from backend.api.settings_schema import SETTABLE, clamp, schema
 from backend.config import settings
 from backend.core.errors import ExportError, FourierPartialError, UnsupportedExportError
@@ -81,6 +85,7 @@ _jobs = InMemoryJobStore(ttl_seconds=settings.session_ttl_seconds)
 _pipeline = build_pipeline()
 _loader = build_loader(max_duration_seconds=settings.max_duration_seconds)
 _params = AnalysisParams()
+_presets = PresetStore(settings.presets_file)
 
 # ADJUSTABLE: how many analyses may run at once. Analysis is CPU-bound, so
 # more threads than cores just adds contention and memory pressure.
@@ -897,6 +902,68 @@ async def reanalyze(
 
     seconds = max(2.0, (len(samples) / _params.sample_rate) * 0.15)
     return JobCreatedResponse(job_id=new_job_id, estimated_seconds=round(seconds, 1))
+
+
+# =============================================================================
+# Presets
+# =============================================================================
+
+
+class PresetBody(BaseModel):
+    """A settings combination to save under a name."""
+
+    settings: dict[str, float] = Field(default_factory=dict)
+    description: str = ""
+
+
+@router.get("/presets")
+async def list_presets() -> dict[str, object]:
+    """Every preset: the built-in ones first, then the user's own.
+
+    `file` is included so the interface can tell someone where their presets
+    actually live. They are a plain JSON file on purpose, and a file nobody can
+    find is not much better than browser storage.
+    """
+    return {
+        "presets": [p.as_dict() for p in _presets.all()],
+        "file": str(_presets.path),
+    }
+
+
+@router.put("/presets/{name}")
+async def save_preset(name: str, body: PresetBody) -> dict[str, object]:
+    """Create or overwrite a user preset.
+
+    Only settings that DIFFER from the defaults are stored — see
+    backend/api/presets.py. A preset holding all twelve values would count as
+    twelve overrides and would drag a long recording off its duration-
+    appropriate settings.
+    """
+    try:
+        preset = _presets.save(name, body.settings, body.description)
+    except PresetError as exc:
+        # PresetError messages are written for the person who typed the name,
+        # so they pass through rather than being replaced with a generic one.
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except OSError:
+        logger.exception("could not write presets to %s", _presets.path)
+        raise HTTPException(status_code=500, detail="The preset could not be saved.") from None
+    return preset.as_dict()
+
+
+@router.delete("/presets/{name}")
+async def delete_preset(name: str) -> dict[str, object]:
+    """Remove a user preset. Built-ins cannot be deleted."""
+    try:
+        removed = _presets.delete(name)
+    except PresetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except OSError:
+        logger.exception("could not write presets to %s", _presets.path)
+        raise HTTPException(status_code=500, detail="The preset could not be removed.") from None
+    if not removed:
+        raise HTTPException(status_code=404, detail="No preset by that name.")
+    return {"deleted": name}
 
 
 @router.get("/health")

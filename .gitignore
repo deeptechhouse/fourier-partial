@@ -32,3 +32,8 @@ sessions/
 # Launcher logs (kept outside sessions/ so the server cannot delete them)
 logs/
 coverage.xml
+
+# Saved settings combinations. Personal by default — delete this line if you
+# want to version or share them; the file is plain readable JSON.
+presets.json
+presets.json.tmp
