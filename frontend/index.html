@@ -40,6 +40,19 @@
     <input type="file" id="file-input" accept="audio/*" hidden>
   </section>
 
+  <!-- Analysis settings. Collapsed by default: the defaults are good, and a
+       wall of sliders in front of someone who just wants to drop a file in is
+       a worse first impression than no sliders at all. Everything inside is
+       built from GET /api/settings/schema, so ranges and help text live in one
+       place rather than two. -->
+  <details id="settings" class="settings" hidden>
+    <summary>
+      Analysis settings
+      <span class="settings-hint">sensitivity, tracking, grouping</span>
+    </summary>
+    <div id="settings-body" class="settings-body"></div>
+  </details>
+
   <!-- Stage 2: progress. Fed by the WebSocket job feed. -->
   <section id="progress" class="progress" hidden aria-live="polite">
     <div class="bar" id="progress-bar" role="progressbar"
@@ -56,6 +69,7 @@
       <button type="button" id="stop" aria-label="Stop" disabled>Stop</button>
       <button type="button" id="solo-none" disabled>Clear solos</button>
       <button type="button" id="view-toggle" aria-pressed="false" disabled>Amplitude view</button>
+      <button type="button" id="reanalyze" class="ghost" hidden>Re-analyse</button>
       <button type="button" id="new-file" class="ghost">New file</button>
 
       <!-- Export everything. The format choice and the size warning are the

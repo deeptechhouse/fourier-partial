@@ -370,10 +370,27 @@ class ApiClient {
    * @param {File} file
    * @returns {Promise<{job_id: string, estimated_seconds: number}>}
    */
-  async analyze(file) {
+  async analyze(file, settings) {
     const body = new FormData();
     body.append('file', file, file.name);
+    // Only sent when something was actually changed. An empty object would be
+    // harmless, but omitting the field entirely keeps the common request
+    // identical to what it was before settings existed.
+    if (settings && Object.keys(settings).length) {
+      body.append('settings', JSON.stringify(settings));
+    }
     return this._json(await this._fetch(`${this._base}/analyze`, { method: 'POST', body }));
+  }
+
+  /** Run the analysis again on the same audio, with different settings. */
+  async reanalyze(jobId, settings) {
+    return this._json(
+      await this._fetch(`${this._jobPath(jobId)}/reanalyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: settings || {} }),
+      })
+    );
   }
 
   /**
@@ -2141,6 +2158,10 @@ class App {
     this._clearSolosButton = document.getElementById('solo-none');
     this._viewToggle = document.getElementById('view-toggle');
     this._newFileButton = document.getElementById('new-file');
+    this._settingsHost = document.getElementById('settings');
+    this._reanalyzeButton = document.getElementById('reanalyze');
+    /** The settings panel, or null if its schema could not be fetched. */
+    this._settings = null;
     /** Guards against a second bulk export starting on top of one in flight. */
     this._exportingAll = false;
     this._playheadEl = document.getElementById('playhead');
@@ -2293,7 +2314,10 @@ class App {
     this._ensureAudioContext();
 
     try {
-      const created = await this._api.analyze(file);
+      const created = await this._api.analyze(
+        file,
+        this._settings ? this._settings.values() : null
+      );
       if (!created || !created.job_id) throw new ApiError(GENERIC_ERROR, 0);
       this._jobId = created.job_id;
 
@@ -2341,6 +2365,7 @@ class App {
       // Fire and forget: the buttons work without their size labels, so this
       // must never block the workbench appearing or fail it.
       this._loadExportEstimates();
+      this._refreshReanalyze();
       // Canvases cannot be sized while their section is hidden, so the first
       // real draw has to happen after the stage switch, not during render.
       this._drawAllRows();
@@ -2750,6 +2775,21 @@ class App {
     // Export-all: one handler per format option. Wired here with the other
     // transport controls rather than per-row, because this acts on the whole
     // analysis rather than on any one track.
+    // The settings panel builds itself from the server's schema. It is an
+    // enhancement: if the fetch fails the app works exactly as before, on
+    // defaults, so nothing here is awaited before the page becomes usable.
+    createSettingsPanel(document.getElementById('settings-body'), '/api', {
+      onChange: () => this._refreshReanalyze(),
+    }).then((panel) => {
+      this._settings = panel;
+      if (panel && this._settingsHost) this._settingsHost.hidden = false;
+      this._refreshReanalyze();
+    });
+
+    if (this._reanalyzeButton) {
+      this._reanalyzeButton.addEventListener('click', () => this._reanalyze());
+    }
+
     for (const button of document.querySelectorAll('.export-option')) {
       button.addEventListener('click', () => this._exportAll(button.dataset.format));
     }
@@ -3101,6 +3141,62 @@ class App {
    * and how many were skipped — the counts arrive in headers precisely so this
    * can be said without opening the zip.
    */
+  /**
+   * Show the re-analyse button only when it would do something.
+   *
+   * Offering it with no changed settings would promise a different result for
+   * a minute of work and then produce the identical analysis.
+   */
+  _refreshReanalyze() {
+    if (!this._reanalyzeButton) return;
+    const changed = this._settings ? this._settings.changedCount() : 0;
+    const usable = Boolean(this._jobId) && changed > 0;
+    this._reanalyzeButton.hidden = !usable;
+    this._reanalyzeButton.textContent =
+      changed === 1 ? 'Re-analyse (1 change)' : `Re-analyse (${changed} changes)`;
+  }
+
+  /**
+   * Analyse the same audio again with the current settings.
+   *
+   * The server still holds the decoded audio from the first pass, so this
+   * costs one analysis rather than an upload and a decode as well. It returns
+   * a NEW job; the previous one is left alone until it expires, so backing out
+   * of a change means reloading a result that still exists rather than
+   * rebuilding it.
+   */
+  async _reanalyze() {
+    if (!this._jobId || !this._settings) return;
+    const settings = this._settings.values();
+    if (!Object.keys(settings).length) return;
+
+    const previousJob = this._jobId;
+    try {
+      this._clearError();
+      const created = await this._api.reanalyze(previousJob, settings);
+      if (!created || !created.job_id) throw new ApiError(GENERIC_ERROR, 0);
+
+      // Tear the workbench down before following the new job. The tracks,
+      // transport and buffers on screen belong to the previous analysis, and a
+      // re-analysis produces a different set — leaving them up would show the
+      // old rows filling with the new one's audio.
+      this._reset();
+      this._busy = true;
+      this._setStage('progress');
+      this._setProgress(0.01, 'Re-analysing with your settings');
+
+      this._jobId = created.job_id;
+      // The same feed the upload path uses. A re-analysis differs only in
+      // where the job came from, so it gets the same progress handling rather
+      // than a second copy of it.
+      this._startFeed(created.job_id);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+      this._setBanner(message);
+      this._announce(message);
+    }
+  }
+
   async _exportAll(format) {
     if (!this._jobId || this._exportingAll) return;
 

@@ -853,3 +853,139 @@ button[aria-pressed="true"] { font-weight: 600; }
   border-left-color: var(--warn);
   color: var(--paper);
 }
+
+/* --- Analysis settings ---------------------------------------------------- */
+
+/* Collapsed by default. The defaults are good, and a wall of sliders in front
+ * of someone who just wants to drop a file in is a worse first impression than
+ * no sliders at all. */
+.settings {
+  margin-top: var(--s4);
+  border: 1px solid var(--ink-600);
+  border-radius: var(--radius);
+  background: var(--ink-800);
+}
+
+.settings > summary {
+  cursor: pointer;
+  padding: var(--s3) var(--s4);
+  font-size: 14px;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+}
+.settings > summary::-webkit-details-marker { display: none; }
+.settings > summary::before { content: '▸'; color: var(--paper-faint); }
+.settings[open] > summary::before { content: '▾'; }
+.settings > summary:hover { background: var(--ink-700); }
+
+.settings-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper-faint);
+}
+
+.settings-body { padding: 0 var(--s4) var(--s4); }
+
+.settings-group { padding-top: var(--s4); border-top: 1px solid var(--ink-700); }
+.settings-group h3 {
+  margin: 0 0 var(--s1);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.settings-blurb {
+  margin: 0 0 var(--s4);
+  font-size: 12.5px;
+  color: var(--paper-dim);
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+/* One setting. The grid puts the label and its current value on one line, the
+ * slider beneath, and the explanation under that — so scanning down the labels
+ * works, and reading one in full also works. */
+.setting {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px var(--s3);
+  padding: var(--s3) 0;
+  border-bottom: 1px solid var(--ink-700);
+}
+.setting:last-of-type { border-bottom: 0; }
+
+/* Advanced settings are present in the DOM but hidden, so the toggle costs no
+ * rebuild and screen-reader users get a stable document either way. */
+.setting.is-advanced { display: none; }
+.shows-advanced .setting.is-advanced { display: grid; }
+
+.setting-label { font-size: 13px; color: var(--paper); }
+
+.setting-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--paper-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* A changed setting is marked, so "what did I actually alter?" is answerable
+ * at a glance rather than by comparing eleven numbers against remembered ones. */
+.setting.is-changed .setting-label { color: var(--spec-2); }
+.setting.is-changed .setting-value { color: var(--spec-2); }
+
+.setting input[type="range"] { grid-column: 1 / -1; margin: var(--s1) 0 0; }
+
+.setting-help {
+  grid-column: 1 / -1;
+  margin: var(--s1) 0 0;
+  font-size: 12px;
+  color: var(--paper-dim);
+  max-width: 68ch;
+  line-height: 1.45;
+}
+
+/* What moving it does, in the user's terms. Split left/right so the two
+ * directions read as opposites rather than as a list. */
+.setting-arrows {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin: var(--s1) 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper-faint);
+}
+
+/* The consequences of the window and hop, in plain words. "4096" is not
+ * information; "93 ms, tones closer than 10.8 Hz merge" is the actual trade. */
+.settings-derived {
+  margin: var(--s4) 0 0;
+  padding: var(--s3);
+  background: var(--ink-900);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--paper-dim);
+  line-height: 1.6;
+}
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--ink-700);
+}
+
+.settings-summary {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper-faint);
+}
+.settings-summary.is-changed { color: var(--spec-2); }

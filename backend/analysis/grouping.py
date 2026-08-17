@@ -140,7 +140,9 @@ class _Candidate:
 MIN_TEMPORAL_OVERLAP: float = 0.25
 
 
-def _overlaps_in_time(candidate: _Candidate, seed: _Candidate) -> bool:
+def _overlaps_in_time(
+    candidate: _Candidate, seed: _Candidate, min_overlap: float = MIN_TEMPORAL_OVERLAP
+) -> bool:
     """Whether two partials sound at the same time, enough to be one note.
 
     A note's harmonics start together and decay together. Two partials that
@@ -169,7 +171,7 @@ def _overlaps_in_time(candidate: _Candidate, seed: _Candidate) -> bool:
     if shorter <= 0.0:
         return True
 
-    return (overlap / shorter) >= MIN_TEMPORAL_OVERLAP
+    return (overlap / shorter) >= min_overlap
 
 
 def harmonic_number(
@@ -303,7 +305,7 @@ def group_partials(partials: list[Partial], params: AnalysisParams) -> list[Trac
             # music it is ruinous: a repeated note produced a track labelled
             # "G4 -46c + 11847 harmonics", which is not a voice, it is every G
             # in the piece stacked into one row.
-            if n is not None and _overlaps_in_time(candidate, seed):
+            if n is not None and _overlaps_in_time(candidate, seed, params.min_temporal_overlap):
                 claimed.append(candidate)
             else:
                 still_ungrouped.append(candidate)
@@ -371,7 +373,7 @@ def group_partials(partials: list[Partial], params: AnalysisParams) -> list[Trac
         # dividing by zero here would drop every track instead of keeping them.
         return tracks
 
-    floor = loudest * MIN_TRACK_ENERGY_SHARE
+    floor = loudest * params.min_track_energy_share
     audible = [track for track in tracks if _track_energy(track) >= floor]
 
     dropped = len(tracks) - len(audible)
@@ -379,7 +381,7 @@ def group_partials(partials: list[Partial], params: AnalysisParams) -> list[Trac
         logger.info(
             "folded %d track(s) below %.1f%% of the loudest track into the residual",
             dropped,
-            100.0 * MIN_TRACK_ENERGY_SHARE,
+            100.0 * params.min_track_energy_share,
         )
 
     # Renumber so track ids stay contiguous from zero. The API exposes these

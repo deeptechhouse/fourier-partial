@@ -101,6 +101,31 @@ class AnalysisParams:
     # quietest partials are folded into the residual. Keeps the interface sane.
     max_tracks: int = 200
 
+    # --- Grouping thresholds -------------------------------------------------
+    # These two lived as module constants in analysis/grouping.py, which made
+    # them adjustable only by editing source. They are analysis parameters like
+    # any other, and a user tuning sensitivity wants them in the same place as
+    # the rest, so they moved here. grouping.py still defines the same defaults
+    # for direct callers and tests.
+
+    # ADJUSTABLE: a track must carry at least this share of the LOUDEST track's
+    # energy to earn a row. 0.005 = half a percent.
+    #
+    # This is the single most effective "show me less junk" dial. Noise throws
+    # off short partials that cluster into convincing-looking but inaudible
+    # notes; raising this culls them. Set it to 0.0 to see absolutely
+    # everything the tracker found -- useful for understanding a sound, and
+    # unpleasant for working with one.
+    min_track_energy_share: float = 0.005
+
+    # ADJUSTABLE: how much of the shorter partial's life must coincide with the
+    # seed's for the two to count as parts of the same note.
+    #
+    # Lower groups more eagerly, which on a long recording starts merging
+    # separate occurrences of the same pitch into one track. Higher splits a
+    # note whose upper harmonics die early away from its own fundamental.
+    min_temporal_overlap: float = 0.25
+
     def __post_init__(self) -> None:
         """Validate invariants at construction, so bad settings fail loudly."""
         if self.window_size <= 0 or (self.window_size & (self.window_size - 1)) != 0:
@@ -111,6 +136,41 @@ class AnalysisParams:
             raise ValueError(f"sample_rate must be positive, got {self.sample_rate}")
         if self.max_tracks <= 0:
             raise ValueError(f"max_tracks must be positive, got {self.max_tracks}")
+        if self.zero_pad_factor < 1:
+            raise ValueError(f"zero_pad_factor must be at least 1, got {self.zero_pad_factor}")
+        if self.peak_threshold_db >= 0:
+            raise ValueError(
+                f"peak_threshold_db is relative to the loudest peak and must be "
+                f"negative, got {self.peak_threshold_db}"
+            )
+        if self.max_peaks_per_frame <= 0:
+            raise ValueError(
+                f"max_peaks_per_frame must be positive, got {self.max_peaks_per_frame}"
+            )
+        if self.max_freq_drift_cents <= 0:
+            raise ValueError(
+                f"max_freq_drift_cents must be positive, got {self.max_freq_drift_cents}"
+            )
+        if self.max_gap_frames < 0:
+            raise ValueError(f"max_gap_frames cannot be negative, got {self.max_gap_frames}")
+        if self.min_partial_duration_ms < 0:
+            raise ValueError(
+                f"min_partial_duration_ms cannot be negative, got {self.min_partial_duration_ms}"
+            )
+        if self.harmonic_tolerance_cents <= 0:
+            raise ValueError(
+                f"harmonic_tolerance_cents must be positive, got {self.harmonic_tolerance_cents}"
+            )
+        if not 0.0 <= self.min_track_energy_share <= 1.0:
+            raise ValueError(
+                f"min_track_energy_share is a fraction and must be in [0, 1], "
+                f"got {self.min_track_energy_share}"
+            )
+        if not 0.0 <= self.min_temporal_overlap <= 1.0:
+            raise ValueError(
+                f"min_temporal_overlap is a fraction and must be in [0, 1], "
+                f"got {self.min_temporal_overlap}"
+            )
 
     # --- Derived, human-meaningful quantities --------------------------------
 

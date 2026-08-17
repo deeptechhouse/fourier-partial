@@ -11,6 +11,8 @@ API SURFACE
     GET    /api/jobs/{job_id}/export             ?format=wav|wav-tones|mid|mid-single
     GET    /api/jobs/{job_id}/export/estimate    how big each format would be
     GET    /api/jobs/{job_id}/mixdown            ?exclude=ids -> all tracks, minus those
+    GET    /api/settings/schema                  every adjustable setting, described
+    POST   /api/jobs/{job_id}/reanalyze          same audio, different settings
     GET    /api/health                           liveness
 
 WHY THERE IS A MIXDOWN ENDPOINT
@@ -36,6 +38,8 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
+import math
 import logging
 import shutil
 import tempfile
@@ -47,13 +51,14 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, WebSocket
+from fastapi import APIRouter, Form, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
 from backend.analysis.pipeline import downsample_trajectory
 from backend.api.jobs import InMemoryJobStore, JobState
+from backend.api.settings_schema import SETTABLE, clamp, schema
 from backend.config import settings
 from backend.core.errors import ExportError, FourierPartialError, UnsupportedExportError
 from backend.core.types import AnalysisParams, AnalysisResult, Track, TrackKind, pitch_label
@@ -302,7 +307,81 @@ def _require_result(job_id: str) -> AnalysisResult:
     return result
 
 
-def _run_analysis(job_id: str, upload_path: Path) -> None:
+
+def _clean_settings(overrides: dict[str, float] | None) -> dict[str, float]:
+    """Validate and normalise a settings payload, AT REQUEST TIME.
+
+    This has to happen in the request handler rather than in the worker thread.
+    Raising inside the thread turns a bad request into a job that accepts the
+    upload, returns 200, and only then fails — so the client sees a successful
+    submission followed by a mysterious failure, instead of "that value is not
+    a number".
+
+    Unknown keys are ignored rather than rejected: a stale field from an older
+    client should not fail an analysis it has no bearing on. Out-of-range values
+    are clamped rather than rejected, because a slider is not a validation
+    boundary and the panel is not the only possible client.
+    """
+    clean: dict[str, float] = {}
+    for name, value in (overrides or {}).items():
+        if name not in SETTABLE:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise HTTPException(status_code=400, detail=f"{name} must be a number.")
+        number = float(value)
+        if not math.isfinite(number):
+            raise HTTPException(status_code=400, detail=f"{name} must be a real number.")
+        bounded = clamp(name, number)
+        # Integer fields must not arrive as floats, or the wrong type is carried
+        # into arithmetic that assumes whole samples.
+        current = getattr(AnalysisParams(), name)
+        clean[name] = int(round(bounded)) if isinstance(current, int) else bounded
+
+    # Catch combinations that no per-field range can express — a hop larger
+    # than its window, for instance. Checked against the defaults, which
+    # catches anything the user has explicitly made contradictory.
+    try:
+        AnalysisParams(**clean)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+    return clean
+
+
+def _params_for(duration_s: float, overrides: dict[str, float] | None) -> AnalysisParams:
+    """Build analysis settings for this audio, with the user's edits on top.
+
+    The duration tier still applies underneath: a ten-minute file starts from
+    the cheaper long-form settings, and anything the user set explicitly wins
+    over that. So adjusting one knob does not silently drag a long recording
+    back to phrase settings and make it unanalysable.
+
+    Called from the worker thread, so it raises ValueError rather than
+    HTTPException — the shape of the payload was already checked by
+    `_clean_settings` at request time, and what can still fail here is the
+    interaction between an override and the duration tier (a window smaller
+    than the tier's hop, say), which cannot be known until the audio is
+    decoded.
+    """
+    return AnalysisParams.for_duration(duration_s, **(overrides or {}))
+
+
+def _parse_settings(raw: str | None) -> dict[str, float] | None:
+    """Read the settings blob that rides along with an upload."""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Settings were not valid JSON.") from None
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="Settings must be an object.")
+    return parsed
+
+
+def _run_analysis(
+    job_id: str, upload_path: Path, overrides: dict[str, float] | None = None
+) -> None:
     """Worker-thread entry point: load, analyse, verify, store.
 
     Runs off the event loop so the server keeps answering requests. Every
@@ -323,7 +402,13 @@ def _run_analysis(job_id: str, upload_path: Path) -> None:
         # tiers trade some onset precision for the file being analysable at
         # all. See AnalysisParams.for_duration.
         duration_s = len(samples) / _params.sample_rate
-        params = AnalysisParams.for_duration(duration_s)
+        try:
+            params = _params_for(duration_s, overrides)
+        except ValueError as exc:
+            # Only reachable when an override clashes with the duration tier,
+            # which cannot be known until the audio has been decoded.
+            _jobs.fail(job_id, f"Those settings do not work together: {exc}")
+            return
         if params.hop_size != _params.hop_size:
             logger.info(
                 "job %s: %.1fs of audio -> hop=%d, zero_pad=%d (long-form settings)",
@@ -368,7 +453,11 @@ def _run_analysis(job_id: str, upload_path: Path) -> None:
 
 
 @router.post("/analyze", response_model=JobCreatedResponse)
-async def analyze(request: Request, file: UploadFile) -> JobCreatedResponse:
+async def analyze(
+    request: Request,
+    file: UploadFile,
+    settings_json: str | None = Form(default=None, alias="settings"),
+) -> JobCreatedResponse:
     """Accept an audio upload and start a background analysis.
 
     Validation happens here, at the boundary, before anything is written to
@@ -376,6 +465,7 @@ async def analyze(request: Request, file: UploadFile) -> JobCreatedResponse:
     duration. See design document section 13.
     """
     _check_rate_limit(_client_key(request))
+    overrides = _clean_settings(_parse_settings(settings_json))
 
     job_id = uuid.uuid4().hex
     # A generated name, never the uploader's. A user-supplied filename is an
@@ -413,7 +503,7 @@ async def analyze(request: Request, file: UploadFile) -> JobCreatedResponse:
 
     _jobs.create(job_id, filename=file.filename or "")
     threading.Thread(
-        target=_run_analysis, args=(job_id, upload_path), daemon=True, name=f"analyze-{job_id[:8]}"
+        target=_run_analysis, args=(job_id, upload_path, overrides), daemon=True, name=f"analyze-{job_id[:8]}"
     ).start()
 
     # Rough guide for the UI, not a promise: analysis is a little slower than
@@ -725,6 +815,88 @@ async def export_estimate(job_id: str) -> dict[str, object]:
             for fmt in ArchiveFormat
         },
     }
+
+
+@router.get("/settings/schema")
+async def settings_schema() -> dict[str, object]:
+    """Describe every adjustable setting: range, default, and what it does.
+
+    The panel builds itself from this rather than hardcoding ranges, so a
+    default changed in Python cannot leave a slider whose "reset" restores a
+    value the analyser no longer uses.
+    """
+    return schema()
+
+
+class ReanalyzeRequest(BaseModel):
+    """New settings for an analysis that has already been run."""
+
+    settings: dict[str, float] = Field(default_factory=dict)
+
+
+@router.post("/jobs/{job_id}/reanalyze", response_model=JobCreatedResponse)
+async def reanalyze(
+    request: Request, job_id: str, body: ReanalyzeRequest
+) -> JobCreatedResponse:
+    """Run the analysis again on the same audio with different settings.
+
+    NO RE-UPLOAD. The completed result still holds the decoded, resampled mono
+    audio -- it has to, because the reconstruction invariant is measured
+    against it -- so tuning a setting costs one analysis rather than an upload
+    plus a decode. On a ten-minute file that is the difference between a minute
+    and several.
+
+    Returns a NEW job id. The previous analysis is deliberately left intact
+    until its TTL expires, so a user who preferred the old settings can go back
+    to a result that is still there rather than one they have to rebuild.
+    """
+    _check_rate_limit(_client_key(request))
+    overrides = _clean_settings(body.settings)
+    source = _require_result(job_id)
+
+    # `original` is a read-only view; copy it, because the new analysis will
+    # hold onto whatever it is given for the life of its own result and the two
+    # jobs must not share a buffer.
+    samples = np.array(source.original, dtype=np.float32, copy=True)
+
+    new_job_id = uuid.uuid4().hex
+    _jobs.create(new_job_id, filename=f"re-analysis of {job_id[:8]}")
+
+    def run() -> None:
+        acquired = _analysis_slots.acquire(timeout=120)
+        if not acquired:
+            _jobs.fail(new_job_id, "The server is busy. Please try again in a moment.")
+            return
+        try:
+            duration_s = len(samples) / _params.sample_rate
+            try:
+                params = _params_for(duration_s, overrides)
+            except ValueError as exc:
+                _jobs.fail(new_job_id, f"Those settings do not work together: {exc}")
+                return
+
+            def on_progress(fraction: float, stage: str) -> None:
+                _jobs.set_progress(new_job_id, fraction, stage)
+
+            result = _pipeline.analyze(samples, params, on_progress=on_progress)
+            report = _pipeline.verify(result)
+            _jobs.complete(new_job_id, result, report)
+            logger.info(
+                "re-analysis %s of %s: %d tracks", new_job_id[:8], job_id[:8], len(result.tracks)
+            )
+        except FourierPartialError as exc:
+            logger.warning("re-analysis %s failed: %s", new_job_id, exc, exc_info=True)
+            _jobs.fail(new_job_id, exc.user_message)
+        except Exception:
+            logger.exception("re-analysis %s crashed", new_job_id)
+            _jobs.fail(new_job_id, "An unexpected error occurred while analysing that audio.")
+        finally:
+            _analysis_slots.release()
+
+    threading.Thread(target=run, daemon=True, name=f"reanalyze-{new_job_id[:8]}").start()
+
+    seconds = max(2.0, (len(samples) / _params.sample_rate) * 0.15)
+    return JobCreatedResponse(job_id=new_job_id, estimated_seconds=round(seconds, 1))
 
 
 @router.get("/health")
