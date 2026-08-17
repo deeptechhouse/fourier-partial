@@ -8,6 +8,8 @@ API SURFACE
     GET    /api/jobs/{job_id}/tracks             track metadata (no audio)
     GET    /api/jobs/{job_id}/tracks/{tid}/audio rendered PCM for playback
     GET    /api/jobs/{job_id}/tracks/{tid}/export ?format=wav|mid
+    GET    /api/jobs/{job_id}/export             ?format=wav|mid|mid-single -> everything
+    GET    /api/jobs/{job_id}/export/estimate    how big each format would be
     GET    /api/jobs/{job_id}/mixdown            ?exclude=ids -> all tracks, minus those
     GET    /api/health                           liveness
 
@@ -53,8 +55,9 @@ from starlette.websockets import WebSocketDisconnect
 from backend.analysis.pipeline import downsample_trajectory
 from backend.api.jobs import InMemoryJobStore, JobState
 from backend.config import settings
-from backend.core.errors import FourierPartialError, UnsupportedExportError
+from backend.core.errors import ExportError, FourierPartialError, UnsupportedExportError
 from backend.core.types import AnalysisParams, AnalysisResult, Track, TrackKind, pitch_label
+from backend.export.archive import ArchiveFormat, build_archive, estimate_bytes
 from backend.export.midi_exporter import MidiExporter
 from backend.export.wav_exporter import WavExporter
 from backend.services import build_loader, build_pipeline
@@ -639,6 +642,85 @@ async def export_track(
         raise HTTPException(status_code=500, detail="The export could not be completed.") from None
 
     return FileResponse(destination, filename=filename, media_type="application/octet-stream")
+
+
+@router.get("/jobs/{job_id}/export")
+async def export_all(
+    job_id: str,
+    format: str = Query(default="wav", pattern="^(wav|mid|mid-single)$"),
+) -> FileResponse:
+    """Export every track at once.
+
+    `wav` and `mid` return a .zip of one file per track; `mid-single` returns
+    one multi-channel .mid. Every archive carries a MANIFEST.txt naming what is
+    inside and what was left out -- a bulk export is exactly where things get
+    dropped quietly, and an archive with fewer files than the user has rows on
+    screen looks complete while being wrong.
+
+    This can be large: forty tracks of ten-minute audio is about 3.2 GB of
+    24-bit WAV. It is built to a scratch file rather than in memory, and served
+    as a stream. Call `/export/estimate` first if you want to warn the user.
+    """
+    result = _require_result(job_id)
+    fmt = ArchiveFormat(format)
+
+    workspace = Path(tempfile.mkdtemp(prefix="fp_export_", dir=_session_dir()))
+    filename = f"fourier_partial_{job_id[:8]}_{fmt.value}{fmt.extension}"
+    destination = workspace / filename
+
+    try:
+        report = await asyncio.to_thread(
+            build_archive, result, fmt, destination, workspace / "parts"
+        )
+    except ExportError as exc:
+        shutil.rmtree(workspace, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=exc.user_message) from None
+    except Exception:
+        shutil.rmtree(workspace, ignore_errors=True)
+        logger.exception("bulk export failed for job %s", job_id)
+        raise HTTPException(status_code=500, detail="The export could not be completed.") from None
+
+    # Surfaced in headers so the client can tell the user what happened without
+    # unzipping first. The manifest inside says the same thing at length; this
+    # is so the UI can put "39 files, 1 skipped" on screen immediately.
+    return FileResponse(
+        destination,
+        filename=filename,
+        media_type="application/zip" if fmt.is_archive else "audio/midi",
+        headers={
+            "X-Export-Included": str(len(report.included)),
+            "X-Export-Skipped": str(len(report.skipped)),
+        },
+    )
+
+
+@router.get("/jobs/{job_id}/export/estimate")
+async def export_estimate(job_id: str) -> dict[str, object]:
+    """How big each export format would be, without building it.
+
+    Exists so the interface can warn before someone commits to a multi-gigabyte
+    download. Deliberately pessimistic for WAV: a warning that proves too
+    cautious is far better received than one that proves too optimistic.
+    """
+    result = _require_result(job_id)
+    exportable_as_midi = sum(1 for t in result.tracks if t.is_exportable_as_midi)
+    return {
+        "job_id": job_id,
+        "track_count": len(result.tracks),
+        "formats": {
+            fmt.value: {
+                "bytes": estimate_bytes(result, fmt),
+                "files": (
+                    len(result.tracks)
+                    if fmt is ArchiveFormat.WAV
+                    else min(exportable_as_midi, 15)
+                    if fmt is ArchiveFormat.MIDI_SINGLE
+                    else exportable_as_midi
+                ),
+            }
+            for fmt in ArchiveFormat
+        },
+    }
 
 
 @router.get("/health")

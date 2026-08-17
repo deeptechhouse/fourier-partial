@@ -440,6 +440,46 @@ class ApiClient {
    * @param {'wav'|'mid'} format
    * @returns {string}
    */
+  /**
+   * The download URL for EVERY track at once.
+   *
+   * Separate from exportUrl because it is a different resource, not the same
+   * one with a wildcard: it returns a zip (or, for mid-single, one multi-track
+   * file) built server-side, and it can be gigabytes.
+   */
+  exportAllUrl(jobId, format) {
+    const query = new URLSearchParams({ format });
+    return `${this._jobPath(jobId)}/export?${query}`;
+  }
+
+  /**
+   * Fetch the whole-analysis export.
+   *
+   * Returns the counts the server reports in headers alongside the blob, so
+   * the UI can say "39 files, 1 skipped" without unzipping anything. A bulk
+   * export that quietly contains fewer files than the user has rows is the
+   * failure this feature exists to avoid, so the count travels with the file.
+   */
+  async exportAll(jobId, format) {
+    const response = await this._fetch(this.exportAllUrl(jobId, format));
+    if (!response.ok) throw await this._error(response);
+    const blob = await response.blob();
+    const ext = format === 'mid-single' ? 'mid' : 'zip';
+    return {
+      blob,
+      filename: filenameFrom(response.headers, `fourier_partial_export.${ext}`),
+      included: Number(response.headers.get('X-Export-Included') || 0),
+      skipped: Number(response.headers.get('X-Export-Skipped') || 0),
+    };
+  }
+
+  /** How big each export format would be, without building any of them. */
+  async exportEstimate(jobId) {
+    const response = await this._fetch(`${this._jobPath(jobId)}/export/estimate`);
+    if (!response.ok) throw await this._error(response);
+    return response.json();
+  }
+
   exportUrl(jobId, trackId, format) {
     const query = new URLSearchParams({ format });
     return `${this._jobPath(jobId)}/tracks/${Number(trackId)}/export?${query}`;
@@ -2100,6 +2140,8 @@ class App {
     this._clearSolosButton = document.getElementById('solo-none');
     this._viewToggle = document.getElementById('view-toggle');
     this._newFileButton = document.getElementById('new-file');
+    /** Guards against a second bulk export starting on top of one in flight. */
+    this._exportingAll = false;
     this._playheadEl = document.getElementById('playhead');
     this._audioStatus = document.getElementById('audio-status');
     this._playbackNote = document.getElementById('playback-mode');
@@ -2295,6 +2337,9 @@ class App {
       this._summary = summary;
       this.renderWorkbench(summary);
       this._setStage('workbench');
+      // Fire and forget: the buttons work without their size labels, so this
+      // must never block the workbench appearing or fail it.
+      this._loadExportEstimates();
       // Canvases cannot be sized while their section is hidden, so the first
       // real draw has to happen after the stage switch, not during render.
       this._drawAllRows();
@@ -2701,6 +2746,13 @@ class App {
       });
     }
 
+    // Export-all: one handler per format option. Wired here with the other
+    // transport controls rather than per-row, because this acts on the whole
+    // analysis rather than on any one track.
+    for (const button of document.querySelectorAll('.export-option')) {
+      button.addEventListener('click', () => this._exportAll(button.dataset.format));
+    }
+
     if (this._newFileButton) {
       this._newFileButton.addEventListener('click', () => {
         this._reset();
@@ -2993,6 +3045,96 @@ class App {
    * @param {number} trackId
    * @param {'wav'|'mid'} format
    */
+  /**
+   * Human-readable byte size. Deliberately coarse — this is a warning, not a
+   * measurement, and "3.2 GB" communicates better than "3,247 MB".
+   */
+  _formatSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
+    if (n >= 1e6) return `${Math.round(n / 1e6)} MB`;
+    if (n >= 1e3) return `${Math.round(n / 1e3)} KB`;
+    return `${n} bytes`;
+  }
+
+  /**
+   * Label each export option with what it will actually cost.
+   *
+   * The point of putting the size on the button is that the decision and the
+   * warning become one thing. A ten-minute analysis is 3.2 GB of WAV, and a
+   * user should learn that while choosing rather than while waiting. Failing
+   * to fetch estimates is not worth an error banner — the buttons simply keep
+   * their generic descriptions and still work.
+   */
+  async _loadExportEstimates() {
+    if (!this._jobId) return;
+    let data;
+    try {
+      data = await this._api.exportEstimate(this._jobId);
+    } catch {
+      return;
+    }
+    for (const [format, info] of Object.entries(data.formats || {})) {
+      const el = document.querySelector(`[data-detail="${format}"]`);
+      if (!el || !info) continue;
+      const files = Number(info.files) || 0;
+      if (files === 0) {
+        el.textContent = 'nothing to export in this format';
+        const button = el.closest('.export-option');
+        if (button) button.disabled = true;
+        continue;
+      }
+      const noun = format === 'mid-single' ? 'track' : 'file';
+      el.textContent =
+        `${files} ${noun}${files === 1 ? '' : 's'} · ${this._formatSize(info.bytes)}`;
+    }
+  }
+
+  /**
+   * Download every track at once.
+   *
+   * The server builds the archive, which for a long analysis takes real time,
+   * so the control reports that it is working and refuses to start a second
+   * one on top. Whatever comes back, the user is told how many files it holds
+   * and how many were skipped — the counts arrive in headers precisely so this
+   * can be said without opening the zip.
+   */
+  async _exportAll(format) {
+    if (!this._jobId || this._exportingAll) return;
+    this._exportingAll = true;
+
+    const menu = document.getElementById('export-all');
+    const summary = document.getElementById('export-all-summary');
+    const previous = summary ? summary.textContent : '';
+    if (summary) summary.textContent = 'Preparing…';
+    if (menu) menu.open = false;
+
+    try {
+      const { blob, filename, included, skipped } = await this._api.exportAll(
+        this._jobId,
+        format
+      );
+      this._saveBlob(blob, filename);
+
+      const message = skipped
+        ? `Exported ${included} file${included === 1 ? '' : 's'}. ` +
+          `${skipped} track${skipped === 1 ? ' was' : 's were'} skipped — see MANIFEST.txt inside.`
+        : `Exported ${included} file${included === 1 ? '' : 's'}.`;
+      this._announce(message);
+      // Skipped tracks reach the banner as well as the announcer: it is the
+      // one outcome a user might otherwise not notice, because a download that
+      // arrives looks like a download that worked.
+      if (skipped) this._setBanner(message);
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
+      this._setBanner(message);
+      this._announce(message);
+    } finally {
+      this._exportingAll = false;
+      if (summary) summary.textContent = previous || 'Export all';
+    }
+  }
+
   async _exportTrack(trackId, format) {
     if (!this._jobId) return;
     try {

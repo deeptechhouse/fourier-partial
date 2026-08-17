@@ -768,3 +768,71 @@ button[aria-pressed="true"] { font-weight: 600; }
   .playhead-time { margin-left: 0; }
   .audio-status { margin-left: 0; flex-basis: 100%; }
 }
+
+/* --- Export all ----------------------------------------------------------- */
+
+/* A disclosure rather than a dropdown: it needs no JavaScript to open, keyboard
+ * support comes free, and it closes on Escape without any of that being
+ * written. The format options carry their own file count and download size, so
+ * choosing is also being warned — a ten-minute analysis is 3.2 GB of WAV, and
+ * that belongs on the button rather than in a dialog after the click. */
+.export-all { position: relative; display: inline-block; }
+
+.export-all > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--paper);
+  background: var(--ink-700);
+  border: 1px solid var(--ink-600);
+  border-radius: var(--radius);
+  padding: var(--s1) var(--s3);
+  user-select: none;
+}
+.export-all > summary::-webkit-details-marker { display: none; }
+.export-all > summary::after { content: ' ▾'; color: var(--paper-faint); }
+.export-all > summary:hover { background: var(--ink-600); }
+.export-all[open] > summary { background: var(--ink-600); border-color: var(--paper-faint); }
+
+.export-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--ink-800);
+  border: 1px solid var(--ink-600);
+  border-radius: var(--radius);
+  padding: var(--s1);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+}
+
+.export-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 2px;
+  padding: var(--s2) var(--s3);
+  cursor: pointer;
+}
+.export-option:hover:not(:disabled) { background: var(--ink-700); }
+.export-option:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.export-option .fmt { font-size: 13px; color: var(--paper); }
+
+/* The size and file count. Tabular figures so a column of them lines up, and
+ * dimmed because it is the consequence of the choice, not the choice itself. */
+.export-option .detail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper-dim);
+  font-variant-numeric: tabular-nums;
+}

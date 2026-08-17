@@ -49,6 +49,30 @@
       <button type="button" id="solo-none" disabled>Clear solos</button>
       <button type="button" id="view-toggle" aria-pressed="false" disabled>Amplitude view</button>
       <button type="button" id="new-file" class="ghost">New file</button>
+
+      <!-- Export everything. The format choice and the size warning are the
+           same control on purpose: each option carries its own file count and
+           download size, so choosing "WAV" on a ten-minute analysis tells you
+           it is 3.2 GB *before* you commit rather than after. A confirmation
+           dialog would interrupt; a labelled choice informs. -->
+      <details class="export-all" id="export-all">
+        <summary id="export-all-summary" aria-label="Export all tracks">Export all</summary>
+        <div class="export-menu" role="group" aria-label="Export all tracks as">
+          <button type="button" class="export-option" data-format="wav">
+            <span class="fmt">WAV</span>
+            <span class="detail" data-detail="wav">every track, as a zip</span>
+          </button>
+          <button type="button" class="export-option" data-format="mid">
+            <span class="fmt">MIDI</span>
+            <span class="detail" data-detail="mid">one file per track, as a zip</span>
+          </button>
+          <button type="button" class="export-option" data-format="mid-single">
+            <span class="fmt">MIDI — single file</span>
+            <span class="detail" data-detail="mid-single">one multi-channel file</span>
+          </button>
+        </div>
+      </details>
+
       <span id="audio-status" class="audio-status"></span>
       <span id="playhead" class="playhead-time">0.00 s / 0.00 s</span>
     </div>
