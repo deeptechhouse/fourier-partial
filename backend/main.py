@@ -85,6 +85,26 @@ def create_app() -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
+
+        # Always revalidate the interface.
+        #
+        # StaticFiles sends ETags, so without this a browser may serve the page
+        # from its own cache without asking — and since the launcher opens the
+        # app by URL, an already-open tab is simply focused rather than
+        # reloaded. The result is a user looking at a version of the interface
+        # from before the last change, wondering where a new control went. That
+        # happened, and it cost a diagnosis of code that was working perfectly.
+        #
+        # `no-cache` means "revalidate", not "do not store": the ETag still
+        # answers with a 304 and nothing is re-downloaded when nothing changed.
+        # Costs one conditional request per asset; buys never debugging a stale
+        # page again.
+        #
+        # Deliberately not applied to /api — the audio endpoints set their own
+        # caching, and a track's rendered PCM is genuinely immutable for the
+        # life of its job.
+        if not request.url.path.startswith("/api"):
+            response.headers["Cache-Control"] = "no-cache"
         # ws: is listed explicitly for the progress socket. Some browsers do
         # not treat a same-origin WebSocket as covered by connect-src 'self',
         # and the failure mode is a progress bar that silently never moves.
