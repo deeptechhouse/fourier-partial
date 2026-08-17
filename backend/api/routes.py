@@ -70,6 +70,7 @@ from backend.core.types import AnalysisParams, AnalysisResult, Track, TrackKind,
 from backend.export.archive import ArchiveFormat, build_archive, estimate_bytes
 from backend.export.midi_exporter import MidiExporter
 from backend.export.wav_exporter import WavExporter
+from backend.analysis.recursive import RecursiveAnalyser
 from backend.services import build_loader, build_pipeline
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,9 @@ router = APIRouter(prefix="/api", tags=["analysis"])
 
 _jobs = InMemoryJobStore(ttl_seconds=settings.session_ttl_seconds)
 _pipeline = build_pipeline()
+# Recursion is a wrapper, not a pipeline change: at depth 1 with no skip it
+# calls straight through, so the ordinary path is unaffected.
+_analyser = RecursiveAnalyser(_pipeline)
 _loader = build_loader(max_duration_seconds=settings.max_duration_seconds)
 _params = AnalysisParams()
 _presets = PresetStore(settings.presets_file)
@@ -176,6 +180,11 @@ class TrackSummary(BaseModel):
     energy_ratio: float = Field(description="Share of total energy, 0.0 - 1.0.")
     partial_count: int
     exportable_as_midi: bool
+
+    # Which analysis pass found this track. 1 for an ordinary run; higher only
+    # when recursion was used. Sent so the interface can explain why a quiet
+    # track appeared only after the depth was raised.
+    level: int = 1
 
     # The bare note name ('G4'), with no cent deviation. The interface groups
     # rows by this so a long recording reads as "G4, seven times" rather than
@@ -272,6 +281,7 @@ def _summarise(job_id: str, result: AnalysisResult) -> AnalysisSummary:
                 energy_ratio=round(energy / total, 5),
                 partial_count=len(partials),
                 exportable_as_midi=track.is_exportable_as_midi,
+                level=track.level,
                 pitch=pitch_label(mean_hz) if track.kind is not TrackKind.RESIDUAL else "",
                 trajectory=downsample_trajectory(track),
             )
@@ -427,8 +437,18 @@ def _run_analysis(
         def on_progress(fraction: float, stage: str) -> None:
             _jobs.set_progress(job_id, fraction, stage)
 
-        result = _pipeline.analyze(samples, params, on_progress=on_progress)
+        result, levels = _analyser.analyse(samples, params, on_progress=on_progress)
         report = _pipeline.verify(result)
+        if len(levels) > 1:
+            logger.info(
+                "job %s ran %d passes: %s",
+                job_id,
+                len(levels),
+                ", ".join(
+                    f"L{lv.level}={lv.tracks_found}{'' if lv.kept else ' (discarded)'}"
+                    for lv in levels
+                ),
+            )
         _jobs.complete(job_id, result, report)
         logger.info(
             "job %s complete: %d tracks, partial energy %.1f%%, error %.2e",
@@ -921,7 +941,7 @@ async def reanalyze(
             def on_progress(fraction: float, stage: str) -> None:
                 _jobs.set_progress(new_job_id, fraction, stage)
 
-            result = _pipeline.analyze(samples, params, on_progress=on_progress)
+            result, _levels = _analyser.analyse(samples, params, on_progress=on_progress)
             report = _pipeline.verify(result)
             _jobs.complete(new_job_id, result, report)
             logger.info(

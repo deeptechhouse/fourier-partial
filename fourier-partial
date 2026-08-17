@@ -1,0 +1,40 @@
+#!/bin/sh
+# fourier_partial — command line launcher.
+#
+# Runs the CLI using the project's own virtualenv, from any directory, so the
+# tool works without activating anything or remembering where it lives.
+#
+# Put it on your PATH with a symlink:
+#     ln -s "$(pwd)/fourier-partial" /usr/local/bin/fourier-partial
+#
+# The symlink is resolved below, so the link can live anywhere.
+
+set -e
+
+# Resolve this script through any chain of symlinks to find the project root.
+# `readlink -f` would be one line, but it is GNU-only and absent on macOS 12,
+# which is the machine this has to work on.
+target="$0"
+while [ -L "$target" ]; do
+    link=$(readlink "$target")
+    case "$link" in
+        /*) target="$link" ;;
+        *)  target="$(dirname "$target")/$link" ;;
+    esac
+done
+ROOT="$(cd "$(dirname "$target")" && pwd)"
+
+PYTHON="$ROOT/.venv/bin/python"
+if [ ! -x "$PYTHON" ]; then
+    # No virtualenv yet. Say how to make one rather than failing obscurely on
+    # a missing numpy three seconds later.
+    echo "fourier_partial: no virtualenv at $ROOT/.venv" >&2
+    echo "Create one with:" >&2
+    echo "    cd $ROOT && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+    exit 3
+fi
+
+# `cd` so that `backend` is importable, and exec so signals (Ctrl-C on a long
+# batch) reach Python directly instead of being swallowed by this shell.
+cd "$ROOT"
+exec "$PYTHON" -m backend.cli "$@"

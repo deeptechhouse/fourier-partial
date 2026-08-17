@@ -220,10 +220,39 @@ def _manifest(result: AnalysisResult, report: ArchiveReport) -> str:
         f"Sample rate     : {result.sample_rate} Hz",
         f"Tracks analysed : {len(result.tracks)}",
         f"Files included  : {len(report.included)}",
-        "",
     ]
 
-    if report.format.is_wav:
+    # Recursion: say how many passes ran and, crucially, whether any were
+    # thrown away. A reader who is told these files sum back to the original
+    # must not be told that when levels were stripped and they do not.
+    params = result.params
+    passes = int(getattr(params, "recursion_depth", 1))
+    stripped = int(getattr(params, "residual_skip", 0))
+    levels = sorted({t.level for t in result.tracks})
+    if passes > 1 or stripped:
+        lines.append(f"Analysis passes : {passes} kept, {stripped} stripped first")
+        if len(levels) > 1:
+            lines.append(f"Track levels    : {', '.join('L' + str(n) for n in levels)}")
+    lines.append("")
+
+    if report.format.is_wav and stripped:
+        # The honest version. Stripping discards whole layers, so the sum is
+        # the stripped residual rather than the file that was opened -- and a
+        # manifest claiming otherwise would be worse than one saying nothing.
+        lines += [
+            "THESE FILES DO NOT SUM BACK TO THE ORIGINAL RECORDING.",
+            "",
+            f"The first {stripped} analysis pass(es) were run and discarded, keeping only",
+            "what they could not explain. These files sum to THAT leftover signal,",
+            "exactly, and not to the audio that was opened. The discarded layers",
+            "-- typically the loudest, most obvious material -- are simply gone.",
+            "",
+            "That is what the 'layers to strip' setting does, and it is why the",
+            "quiet detail in here was findable at all. To get an export that does",
+            "reconstruct the original, run again with nothing stripped.",
+            "",
+        ]
+    elif report.format.is_wav:
         lines += [
             "THESE FILES SUM BACK TO THE ORIGINAL RECORDING.",
             "",
@@ -231,6 +260,10 @@ def _manifest(result: AnalysisResult, report: ArchiveReport) -> str:
             "reproduces the audio that was analysed. That is a property of how",
             "the residual is computed -- it is the original minus the tones, so",
             "the parts cannot fail to add up.",
+            "",
+            "That stays true however many analysis passes were used: each pass",
+            "subtracts only what it explained, so the parts still account for",
+            "the whole.",
             "",
             f"One caveat: these are {BULK_WAV_SUBTYPE}. The reconstruction is exact in",
             "the renderer's own 32-bit float; writing 24-bit rounds each sample",

@@ -126,6 +126,44 @@ class AnalysisParams:
     # note whose upper harmonics die early away from its own fundamental.
     min_temporal_overlap: float = 0.25
 
+    # --- Recursion -----------------------------------------------------------
+    # Analysis is not exhaustive in one pass. Loud partials mask quiet ones:
+    # a peak has to clear a threshold relative to the loudest peak in its
+    # frame, so a quiet tone sitting under a loud one is never picked. Remove
+    # the loud one and the quiet one becomes the loudest thing left, and the
+    # same analysis at the same settings now finds it.
+    #
+    # That is what these two do -- re-run the analysis on the residual. The
+    # arithmetic still works out exactly, because the residual is defined as a
+    # subtraction at every level:
+    #
+    #     original = sum(partials_1) + residual_1
+    #     residual_1 = sum(partials_2) + residual_2
+    #  => original = sum(partials_1) + sum(partials_2) + residual_2
+    #
+    # so every level's partials plus the LAST residual still reproduce the
+    # input sample for sample. The invariant composes; it is not weakened.
+
+    # ADJUSTABLE: how many times to analyse, each pass working on what the
+    # previous pass could not explain. 1 is a single ordinary analysis.
+    #
+    # Every level costs a full analysis, so depth 4 takes roughly four times
+    # as long. Levels stop early once a pass finds nothing new, which is not a
+    # heuristic: an empty pass leaves the residual untouched, so the next pass
+    # would receive identical input and produce an identical empty result.
+    recursion_depth: int = 1
+
+    # ADJUSTABLE: run this many passes FIRST and throw their tracks away,
+    # keeping only the residual, then begin.
+    #
+    # This is the "show me what is underneath" control: it strips the obvious
+    # layers and hands you what was hiding under them. Note the consequence --
+    # the discarded layers are gone, so the tracks you get back sum to that
+    # stripped residual rather than to the file you started with. That is the
+    # point of the setting, but it does mean the reconstruction promise now
+    # refers to the residual, and everything downstream is told so.
+    residual_skip: int = 0
+
     def __post_init__(self) -> None:
         """Validate invariants at construction, so bad settings fail loudly."""
         if self.window_size <= 0 or (self.window_size & (self.window_size - 1)) != 0:
@@ -138,6 +176,10 @@ class AnalysisParams:
             raise ValueError(f"max_tracks must be positive, got {self.max_tracks}")
         if self.zero_pad_factor < 1:
             raise ValueError(f"zero_pad_factor must be at least 1, got {self.zero_pad_factor}")
+        if self.recursion_depth < 1:
+            raise ValueError(f"recursion_depth must be at least 1, got {self.recursion_depth}")
+        if self.residual_skip < 0:
+            raise ValueError(f"residual_skip must not be negative, got {self.residual_skip}")
         if self.peak_threshold_db >= 0:
             raise ValueError(
                 f"peak_threshold_db is relative to the loudest peak and must be "
@@ -456,7 +498,7 @@ class Track:
     all) together with the rendered audio that represents it.
     """
 
-    __slots__ = ("_track_id", "_kind", "_label", "_partials", "_audio")
+    __slots__ = ("_track_id", "_kind", "_label", "_partials", "_audio", "_level")
 
     def __init__(
         self,
@@ -465,6 +507,7 @@ class Track:
         label: str,
         partials: Sequence[Partial] | None = None,
         audio: NDArray[np.float32] | None = None,
+        level: int = 1,
     ) -> None:
         """Create a track. `audio` is the rendered mono/stereo buffer, if known."""
         self._track_id = track_id
@@ -472,6 +515,7 @@ class Track:
         self._label = label
         self._partials: tuple[Partial, ...] = tuple(partials) if partials else ()
         self._audio = audio
+        self._level = level
 
     # --- Read-only access ----------------------------------------------------
 
@@ -489,6 +533,41 @@ class Track:
     def label(self) -> str:
         """Human-readable name, e.g. 'A4 + harmonics' or 'Residual'."""
         return self._label
+
+    @property
+    def level(self) -> int:
+        """Which analysis pass found this track. 1 unless recursion was used.
+
+        Worth carrying rather than folding into the label, because it is the
+        answer to "why did this quiet thing only appear when I raised the
+        depth?" -- and because the export manifest has to be able to say which
+        pass produced which file.
+        """
+        return self._level
+
+    def relabel(self, label: str) -> None:
+        """Rename the track. Used when merging levels, which needs unique ids
+        and labels that say where each track came from."""
+        self._label = label
+
+    def set_level(self, level: int) -> None:
+        """Record which analysis pass produced this track.
+
+        Separate from `relabel` because the two are read by different
+        consumers: the label is what a person sees, `level` is what the API and
+        the export manifest report. Setting only the label -- which is what the
+        first version of the recursive analyser did -- leaves every track
+        claiming to be from pass 1 while its name says otherwise.
+        """
+        if level < 1:
+            raise ValueError(f"level must be at least 1, got {level}")
+        self._level = level
+
+    def renumber(self, track_id: int) -> None:
+        """Reassign the id. Each analysis pass numbers its tracks from zero, so
+        combining passes must renumber or two tracks would share an id -- and a
+        colliding id silently breaks mute, solo, and export."""
+        self._track_id = track_id
 
     @property
     def partials(self) -> tuple[Partial, ...]:

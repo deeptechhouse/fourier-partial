@@ -274,6 +274,52 @@ GROUPS: tuple[SettingGroup, ...] = (
             ),
         ],
     ),
+    SettingGroup(
+        key="depth",
+        label="How many times it looks",
+        blurb=(
+            "One pass cannot find everything, and not because the analyser is weak. "
+            "A tone only counts if it is loud enough relative to the loudest tone in "
+            "the same moment — so anything hiding under something louder is never "
+            "picked. Take the loud thing away and the quiet one becomes the loudest "
+            "thing left. These two decide how many times to do that, and how much of "
+            "the top to throw away first."
+        ),
+        settings=[
+            Setting(
+                name="recursion_depth",
+                label="Passes",
+                help=(
+                    "How many times to analyse, each pass working on what the last one "
+                    "could not explain. Every pass costs a full analysis, so 4 takes "
+                    "about four times as long. The tracks still sum to your original "
+                    "exactly, however deep you go."
+                ),
+                minimum=1,
+                maximum=8,
+                step=1,
+                higher="digs out quiet detail under loud material",
+                lower="one ordinary analysis, fastest",
+            ),
+            Setting(
+                name="residual_skip",
+                label="Layers to strip first",
+                help=(
+                    "Run this many passes and throw their tracks away, keeping only "
+                    "what they could not explain, then start. This is the 'what is "
+                    "underneath?' control. Note that the stripped layers are gone, so "
+                    "what you get back sums to what was left rather than to the file "
+                    "you opened."
+                ),
+                minimum=0,
+                maximum=6,
+                step=1,
+                advanced=True,
+                higher="strips more of the obvious material away",
+                lower="keeps everything from the first pass",
+            ),
+        ],
+    ),
 )
 
 #: Every settable field name, for validating an incoming payload.

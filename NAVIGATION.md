@@ -25,6 +25,7 @@ The system's central design decision is that the **residual track is defined as 
 ## Key Entry Points
 
 - **Application start:** `backend/main.py` (`python3 -m backend.main`)
+- **Command line / batch:** `backend/cli.py` (`./fourier-partial one|many`)
 - **API routes:** `backend/api/routes.py`
 - **The domain model:** `backend/core/types.py` — read this first
 - **The contracts:** `backend/core/interfaces.py`
@@ -38,6 +39,8 @@ The system's central design decision is that the **residual track is defined as 
 - `analysis` and `synthesis` depend only on `core`
 - `core` depends on nothing in the project — if you find an import from `analysis` or `api` in `core`, a dependency arrow has been reversed
 - `pipeline.py` is the only module that knows the full stage sequence; every stage is injected
+- `analysis/recursive.py` wraps `pipeline.py` rather than modifying it: one pass stays one pass, and how many passes to run is a separate policy
+- `cli.py` is a second door onto the same code as `api`, not a second implementation — it imports the same pipeline, exporters, schema and presets
 - Frontend talks to the backend only through the documented API surface in `routes.py`
 
 ## Pipeline Order
