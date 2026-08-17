@@ -23,6 +23,8 @@
  * it sends nothing, and the duration tier applies exactly as it would have.
  */
 
+import { createPresetBar } from './presets.js';
+
 /** Powers of two between min and max, for the window and hop controls. */
 function powersOfTwo(min, max) {
   const out = [];
@@ -85,6 +87,9 @@ export class SettingsPanel {
   reset() {
     for (const [name, { setting }] of this._controls) this._set(name, setting.default);
     this._refreshSummary();
+    // Guarded: reset() is also called BY the preset bar just before it applies
+    // a preset, and syncing there would fight the selection it is about to make.
+    if (this._presetBar && !this._presetBar._applying) this._presetBar.syncToPanel();
     this._onChange(this.values());
   }
 
@@ -226,6 +231,9 @@ export class SettingsPanel {
       this._paint(setting.name);
       this._refreshDerived();
       this._refreshSummary();
+      // The preset control must stop naming a preset the moment the values
+      // stop matching it, or it claims a combination that is no longer set.
+      if (this._presetBar) this._presetBar.syncToPanel();
       this._onChange(this.values());
     });
 
@@ -293,7 +301,19 @@ export async function createSettingsPanel(host, apiBase, deps) {
   try {
     const response = await fetch(`${apiBase}/settings/schema`);
     if (!response.ok) return null;
-    return new SettingsPanel(host, await response.json(), deps);
+    const panel = new SettingsPanel(host, await response.json(), deps);
+
+    // Presets sit above the sliders. Built here rather than in app.js because
+    // this function owns the host element, and a preset bar without a panel to
+    // drive would be meaningless. A failure to load them leaves the sliders
+    // fully usable, which is why it is not awaited into the same try as the
+    // schema.
+    try {
+      panel._presetBar = await createPresetBar(host, panel, { apiBase });
+    } catch {
+      panel._presetBar = null;
+    }
+    return panel;
   } catch {
     // The panel is an enhancement. If it cannot be built, analysis still works
     // perfectly well with the defaults, so this must never be fatal.

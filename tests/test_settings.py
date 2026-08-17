@@ -337,23 +337,43 @@ def test_reanalyze_with_no_settings_is_allowed(client):
 # =============================================================================
 
 
-def test_a_window_smaller_than_the_tier_hop_is_a_real_clash():
-    """The one validation that cannot happen at request time.
+def test_a_small_window_makes_the_tier_hop_follow_it():
+    """A short window on long audio must work, not raise.
 
-    Per-field ranges cannot catch it and neither can checking against the
-    defaults, because it only exists once the duration is known: a 1024-sample
-    window is perfectly legal, and so is the long-form tier's 2048-sample hop,
-    but together they are not. The audio has to be decoded before this can be
-    detected at all.
+    The tier raises the hop for long files (2048 at ten minutes) and a user may
+    independently ask for a 1024-sample window. Neither is wrong, but a hop
+    larger than its window is meaningless — and refusing the pair made a
+    perfectly reasonable request ("short window, for sharp attacks") impossible
+    on exactly the long files the tier exists for. The built-in preset of that
+    name hit it immediately.
+
+    So the hop follows the window down. The user gets what they asked for, and
+    more frames than the tier intended, which is the honest cost of asking for
+    finer timing.
     """
     from backend.api.routes import _clean_settings, _params_for
 
     cleaned = _clean_settings({"window_size": 1024})
-    # Fine for a phrase, where the tier hop is 512.
-    assert _params_for(10.0, cleaned).window_size == 1024
-    # Not fine for ten minutes, where the tier hop is 2048.
-    with pytest.raises(ValueError, match="hop_size"):
-        _params_for(600.0, cleaned)
+
+    short = _params_for(10.0, cleaned)
+    assert short.window_size == 1024 and short.hop_size == 512  # tier hop already fits
+
+    long_form = _params_for(600.0, cleaned)
+    assert long_form.window_size == 1024
+    assert long_form.hop_size == 1024, "the hop should have been brought down to fit"
+
+
+def test_an_explicit_hop_larger_than_an_explicit_window_is_still_refused():
+    """Only the TIER's hop is adjusted, never the user's own.
+
+    Setting both, in conflict, is a genuine contradiction. Silently changing
+    one of two values someone typed would be worse than telling them.
+    """
+    from backend.api.routes import _clean_settings
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException):
+        _clean_settings({"window_size": 512, "hop_size": 4096})
 
 
 def test_a_clash_fails_the_job_with_something_actionable(client, monkeypatch):

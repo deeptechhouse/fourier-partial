@@ -30,7 +30,11 @@ from pathlib import Path
 import pytest
 
 FRONTEND = Path(__file__).resolve().parent.parent / "frontend" / "js"
-MODULES = ("app", "transport", "waveform", "settings")
+# Discovered, not listed. A hardcoded list goes stale the moment a module is
+# added — which happened immediately: presets.js was written, settings.js
+# imported it, and the copy step silently skipped it, so the test failed with a
+# missing-module error that had nothing to do with the code under test.
+MODULES = tuple(sorted(p.stem for p in (FRONTEND).glob("*.js")))
 
 # Enough of the browser for the modules to *evaluate*. Deliberately a Proxy
 # rather than hand-written stubs: the modules touch a wide and shifting surface

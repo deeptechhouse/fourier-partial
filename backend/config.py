@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # free -- measure before you do.
     max_duration_seconds: float = 600.0
 
+    # --- Presets -------------------------------------------------------------
+    # ADJUSTABLE: where saved settings combinations live. A plain JSON file in
+    # the project folder rather than browser storage, so it survives clearing a
+    # cache, can be edited by hand, copied to another machine, or committed.
+    presets_file: Path = Field(default=Path("./presets.json"))
+
     # --- Session storage -----------------------------------------------------
     session_dir: Path = Field(default=Path("./sessions"))
 
