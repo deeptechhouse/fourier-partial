@@ -74,6 +74,7 @@
 
 import { Transport, MIX_TRACK_ID } from './transport.js';
 import { drawTrajectory, drawWaveform, clear } from './waveform.js';
+import { createSettingsPanel } from './settings.js';
 
 // =============================================================================
 // Tunables
