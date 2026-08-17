@@ -80,6 +80,7 @@
       <details class="export-all" id="export-all">
         <summary id="export-all-summary" aria-label="Export all tracks">Export all</summary>
         <div class="export-menu" role="group" aria-label="Export all tracks as">
+          <p class="export-heading" id="export-heading-all">Everything</p>
           <button type="button" class="export-option" data-format="wav">
             <span class="fmt">WAV</span>
             <span class="detail" data-detail="wav">every track, as a zip</span>
@@ -95,6 +96,22 @@
           <button type="button" class="export-option" data-format="mid-single">
             <span class="fmt">MIDI — single file</span>
             <span class="detail" data-detail="mid-single">one multi-channel file</span>
+          </button>
+
+          <!-- Record out: the same export machinery, narrowed to the tracks
+               currently making a sound. Separated by a heading rather than
+               moved to its own control because the decision is the same one —
+               "give me a file" — and the only difference is scope. The detail
+               lines are rewritten on every mute and solo, so the menu always
+               states what it would capture right now. -->
+          <p class="export-heading" id="export-heading-record">What you&rsquo;re hearing</p>
+          <button type="button" class="export-option is-record" data-format="wav-mix" data-record="1">
+            <span class="fmt">Record out — one WAV</span>
+            <span class="detail" data-record-detail="wav-mix">the current mix, bounced</span>
+          </button>
+          <button type="button" class="export-option is-record" data-format="wav" data-record="1">
+            <span class="fmt">Record out — separate WAVs</span>
+            <span class="detail" data-record-detail="wav">audible tracks only, as a zip</span>
           </button>
         </div>
       </details>
