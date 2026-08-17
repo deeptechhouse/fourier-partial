@@ -29,6 +29,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+
 from backend.core.errors import ExportError
 from backend.core.types import AnalysisResult, Track, TrackKind
 from backend.export.midi_exporter import MidiExporter
@@ -71,6 +74,19 @@ class ArchiveFormat(Enum):
     it is indistinguishable from one that lost it.
     """
 
+    WAV_MIX = "wav-mix"
+    """ONE .wav: the selected tracks summed together.
+
+    A bounce, in the studio sense — what you are currently hearing, printed to
+    a file. Distinct from the archive formats, which give you the parts; this
+    gives you the result of the mute and solo decisions you just made, as a
+    single piece of audio you can drop into a session.
+
+    With every track selected it is the original recording (to 24-bit
+    rounding). With one track soloed it is that track. Everything between is
+    the point.
+    """
+
     MIDI = "mid"
     """A .zip of one .mid per track. The residual is excluded -- it is noise."""
 
@@ -85,12 +101,12 @@ class ArchiveFormat(Enum):
     @property
     def is_archive(self) -> bool:
         """Whether this produces a .zip rather than a single file."""
-        return self is not ArchiveFormat.MIDI_SINGLE
+        return self not in (ArchiveFormat.MIDI_SINGLE, ArchiveFormat.WAV_MIX)
 
     @property
     def is_wav(self) -> bool:
         """Whether this writes audio rather than notes."""
-        return self in (ArchiveFormat.WAV, ArchiveFormat.WAV_TONES)
+        return self in (ArchiveFormat.WAV, ArchiveFormat.WAV_TONES, ArchiveFormat.WAV_MIX)
 
     @property
     def includes_residual(self) -> bool:
@@ -104,7 +120,9 @@ class ArchiveFormat(Enum):
     @property
     def extension(self) -> str:
         """The extension of the thing the user ends up downloading."""
-        return ".zip" if self.is_archive else ".mid"
+        if self.is_archive:
+            return ".zip"
+        return ".wav" if self is ArchiveFormat.WAV_MIX else ".mid"
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +171,10 @@ def estimate_bytes(result: AnalysisResult, fmt: ArchiveFormat) -> int:
     be pessimistic is much better received than one that turns out to be
     optimistic.
     """
+    if fmt is ArchiveFormat.WAV_MIX:
+        # One file, whatever the track count — that is the whole point of it.
+        return int(result.original.shape[0] * 3)
+
     if fmt.is_wav:
         # 3 bytes per sample at 24-bit, plus a negligible header per file.
         samples = result.original.shape[0]
@@ -247,11 +269,60 @@ def _manifest(result: AnalysisResult, report: ArchiveReport) -> str:
     return "\n".join(lines)
 
 
+def selected_tracks(result: AnalysisResult, only: set[int] | None) -> list[Track]:
+    """The tracks an export should consider.
+
+    `only` is how "record out what I am hearing" is expressed: the interface
+    works out which tracks are audible under the current mutes and solos and
+    names them. None means every track, which is what an ordinary export does.
+    """
+    if only is None:
+        return list(result.tracks)
+    return [t for t in result.tracks if t.track_id in only]
+
+
+def build_mix(
+    result: AnalysisResult, destination: Path, only: set[int] | None
+) -> ArchiveReport:
+    """Sum the selected tracks into one WAV — a bounce of what you hear.
+
+    Accumulated in float64 and cast once, the same discipline the renderer
+    uses: adding a few dozen float32 buffers in float32 compounds a rounding
+    error into an audible noise floor.
+    """
+    tracks = [t for t in selected_tracks(result, only) if t.audio is not None]
+    if not tracks:
+        raise ExportError("nothing is audible to record — unmute or unsolo a track first")
+
+    mixed = np.zeros(result.original.shape[0], dtype=np.float64)
+    for track in tracks:
+        mixed += track.audio
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(destination, mixed.astype(np.float32), result.sample_rate, subtype=BULK_WAV_SUBTYPE)
+
+    report = ArchiveReport(path=destination, format=ArchiveFormat.WAV_MIX)
+    report.included = [t.label for t in tracks]
+    for track in result.tracks:
+        if track not in tracks:
+            report.skipped.append(
+                SkippedTrack(
+                    track_id=track.track_id,
+                    label=track.label,
+                    reason="Not audible in the current mix.",
+                )
+            )
+    report.total_bytes = destination.stat().st_size
+    logger.info("recorded out %d of %d track(s)", len(tracks), len(result.tracks))
+    return report
+
+
 def build_archive(
     result: AnalysisResult,
     fmt: ArchiveFormat,
     destination: Path,
     scratch_dir: Path,
+    only: set[int] | None = None,
 ) -> ArchiveReport:
     """Write every track into one downloadable file.
 
@@ -275,15 +346,18 @@ def build_archive(
     destination.parent.mkdir(parents=True, exist_ok=True)
     scratch_dir.mkdir(parents=True, exist_ok=True)
 
+    if fmt is ArchiveFormat.WAV_MIX:
+        return build_mix(result, destination, only)
+
     if fmt is ArchiveFormat.MIDI_SINGLE:
-        return _build_single_midi(result, destination)
+        return _build_single_midi(result, destination, only)
 
     report = ArchiveReport(path=destination, format=fmt)
     exporter = WavExporter(BULK_WAV_SUBTYPE) if fmt.is_wav else MidiExporter()
     compression = _WAV_COMPRESSION if fmt.is_wav else _MIDI_COMPRESSION
 
     with zipfile.ZipFile(destination, "w", compression=compression, allowZip64=True) as archive:
-        for track in result.tracks:
+        for track in selected_tracks(result, only):
             if track.kind is TrackKind.RESIDUAL and not fmt.includes_residual and fmt.is_wav:
                 report.skipped.append(
                     SkippedTrack(
@@ -354,7 +428,9 @@ def build_archive(
     return report
 
 
-def _build_single_midi(result: AnalysisResult, destination: Path) -> ArchiveReport:
+def _build_single_midi(
+    result: AnalysisResult, destination: Path, only: set[int] | None = None
+) -> ArchiveReport:
     """One multi-channel MIDI file, and an honest account of what fits.
 
     `MidiExporter.export_bundle` already handles the channel arithmetic and the
@@ -364,7 +440,7 @@ def _build_single_midi(result: AnalysisResult, destination: Path) -> ArchiveRepo
     report = ArchiveReport(path=destination, format=ArchiveFormat.MIDI_SINGLE)
     exporter = MidiExporter()
 
-    eligible = [t for t in result.tracks if exporter.supports(t)]
+    eligible = [t for t in selected_tracks(result, only) if exporter.supports(t)]
     for track in result.tracks:
         if track not in eligible:
             report.skipped.append(

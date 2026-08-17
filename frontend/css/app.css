@@ -828,6 +828,30 @@ button[aria-pressed="true"] { font-weight: 600; }
 
 .export-option .fmt { font-size: 13px; color: var(--paper); }
 
+/* --- Record out ---------------------------------------------------------
+ * Two groups in one menu: everything, and what you are hearing. A heading is
+ * a real element rather than a border alone so the grouping survives being
+ * read aloud — a divider is invisible to a screen reader. */
+.export-heading {
+  margin: 0;
+  padding: var(--s2) var(--s3) 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--paper-faint);
+}
+.export-heading + .export-option { margin-top: 0; }
+#export-heading-record {
+  margin-top: var(--s2);
+  border-top: 1px solid var(--ink-600);
+  padding-top: var(--s3);
+}
+
+/* Tinted, because a bounce of the current mix is a different kind of act from
+ * exporting the analysis: it captures a decision the user just made by ear. */
+.export-option.is-record .fmt { color: var(--spec-3); }
+
 /* The size and file count. Tabular figures so a column of them lines up, and
  * dimmed because it is the consequence of the choice, not the choice itself. */
 .export-option .detail {

@@ -8,7 +8,8 @@ API SURFACE
     GET    /api/jobs/{job_id}/tracks             track metadata (no audio)
     GET    /api/jobs/{job_id}/tracks/{tid}/audio rendered PCM for playback
     GET    /api/jobs/{job_id}/tracks/{tid}/export ?format=wav|mid
-    GET    /api/jobs/{job_id}/export             ?format=wav|wav-tones|mid|mid-single
+    GET    /api/jobs/{job_id}/export             ?format=wav|wav-tones|wav-mix|mid|mid-single
+                                                 &only=ids -> just those tracks
     GET    /api/jobs/{job_id}/export/estimate    how big each format would be
     GET    /api/jobs/{job_id}/mixdown            ?exclude=ids -> all tracks, minus those
     GET    /api/settings/schema                  every adjustable setting, described
@@ -737,7 +738,11 @@ async def export_track(
 @router.get("/jobs/{job_id}/export")
 async def export_all(
     job_id: str,
-    format: str = Query(default="wav", pattern="^(wav|wav-tones|mid|mid-single)$"),
+    format: str = Query(default="wav", pattern="^(wav|wav-tones|wav-mix|mid|mid-single)$"),
+    only: str = Query(
+        default="",
+        description="Comma-separated track ids to restrict the export to. Empty means all.",
+    ),
 ) -> FileResponse:
     """Export every track at once.
 
@@ -754,13 +759,38 @@ async def export_all(
     result = _require_result(job_id)
     fmt = ArchiveFormat(format)
 
+    # `only` is how the interface says "record out what I am hearing": it works
+    # out which tracks survive the current mutes and solos and names them.
+    selection: set[int] | None = None
+    if only.strip():
+        selection = set()
+        for piece in only.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            try:
+                selection.add(int(piece))
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Track ids must be whole numbers."
+                ) from None
+
+    # Checked here rather than left to the exporter, because an ExportError is
+    # flattened into a generic message on the way out -- correct for internal
+    # failures, useless for "you muted everything", which the user can fix.
+    if selection is not None and not any(t.track_id in selection for t in result.tracks):
+        raise HTTPException(
+            status_code=400,
+            detail="Nothing is audible to record. Unmute or unsolo a track first.",
+        )
+
     workspace = Path(tempfile.mkdtemp(prefix="fp_export_", dir=_session_dir()))
     filename = f"fourier_partial_{job_id[:8]}_{fmt.value}{fmt.extension}"
     destination = workspace / filename
 
     try:
         report = await asyncio.to_thread(
-            build_archive, result, fmt, destination, workspace / "parts"
+            build_archive, result, fmt, destination, workspace / "parts", selection
         )
     except ExportError as exc:
         shutil.rmtree(workspace, ignore_errors=True)
@@ -776,7 +806,13 @@ async def export_all(
     return FileResponse(
         destination,
         filename=filename,
-        media_type="application/zip" if fmt.is_archive else "audio/midi",
+        media_type=(
+            "application/zip"
+            if fmt.is_archive
+            else "audio/wav"
+            if fmt is ArchiveFormat.WAV_MIX
+            else "audio/midi"
+        ),
         headers={
             "X-Export-Included": str(len(report.included)),
             "X-Export-Skipped": str(len(report.skipped)),
@@ -801,7 +837,9 @@ async def export_estimate(job_id: str) -> dict[str, object]:
             fmt.value: {
                 "bytes": estimate_bytes(result, fmt),
                 "files": (
-                    sum(
+                    1
+                    if fmt is ArchiveFormat.WAV_MIX
+                    else sum(
                         1
                         for t in result.tracks
                         if fmt.includes_residual or t.kind is not TrackKind.RESIDUAL

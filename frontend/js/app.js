@@ -298,6 +298,40 @@ function excludeKey(ids) {
 }
 
 /**
+ * The tracks currently making a sound, given every track and the two intents.
+ *
+ * A free function rather than a method because two unrelated objects need the
+ * same answer — the playback strategies, which decide what to schedule, and
+ * the App, which decides what to record out. If those two ever disagreed, the
+ * bounce would not be what the user heard, and nothing about the resulting
+ * file would look wrong: it would simply be missing a part.
+ *
+ * The rule, which is EagerPlayback's:
+ *   - if anything at all is soloed, only soloed-and-not-muted tracks sound;
+ *   - otherwise everything sounds except what is muted.
+ *
+ * Note the first clause turns on whether a solo is *engaged*, not on whether
+ * it leaves anything audible. Solo every track and then mute those same
+ * tracks and the correct answer is silence — falling back to the mute-mix
+ * there would suddenly play everything, which is the opposite of both intents.
+ *
+ * Sorted and de-duplicated so the same selection always produces the same
+ * query string.
+ *
+ * @param {Iterable<number>} all every track id
+ * @param {Set<number>} muted
+ * @param {Set<number>} soloed
+ * @returns {number[]}
+ */
+function audibleIds(all, muted, soloed) {
+  const audible =
+    soloed.size > 0
+      ? [...soloed].filter((id) => !muted.has(id))
+      : [...all].filter((id) => !muted.has(id));
+  return [...new Set(audible)].sort((a, b) => a - b);
+}
+
+/**
  * Decode compressed or uncompressed audio bytes into an AudioBuffer.
  *
  * Both call signatures are supported because decodeAudioData predates
@@ -465,8 +499,13 @@ class ApiClient {
    * one with a wildcard: it returns a zip (or, for mid-single, one multi-track
    * file) built server-side, and it can be gigabytes.
    */
-  exportAllUrl(jobId, format) {
+  exportAllUrl(jobId, format, only = null) {
     const query = new URLSearchParams({ format });
+    // Absent means everything. Deliberately omitted rather than sent empty:
+    // "only=" is indistinguishable from "only nothing" on the wire, and the
+    // difference between those two is an export of every track and an export
+    // of none.
+    if (only) query.set('only', only);
     return `${this._jobPath(jobId)}/export?${query}`;
   }
 
@@ -2792,7 +2831,9 @@ class App {
     }
 
     for (const button of document.querySelectorAll('.export-option')) {
-      button.addEventListener('click', () => this._exportAll(button.dataset.format));
+      button.addEventListener('click', () =>
+        this._exportAll(button.dataset.format, Boolean(button.dataset.record))
+      );
     }
 
     if (this._newFileButton) {
@@ -2815,6 +2856,16 @@ class App {
    * @param {Iterable<number>} trackIds
    * @param {boolean} muted
    */
+  /** Every track id on screen. App keeps rows in a Map keyed by track id. */
+  _allTrackIds() {
+    return [...this._rows.keys()];
+  }
+
+  /** What is audible right now — see `audibleIds`, which playback shares. */
+  _audibleIds() {
+    return audibleIds(this._allTrackIds(), this._muted, this._soloed);
+  }
+
   _setMuted(trackIds, muted) {
     if (!this._transport) return;
     this._updateIntent(this._muted, trackIds, muted);
@@ -2874,6 +2925,7 @@ class App {
       row.setSoloed(this._soloed.has(id));
     }
     for (const group of this._groups) group.refresh(this._muted, this._soloed);
+    this._refreshRecordOut();
   }
 
   /**
@@ -3134,6 +3186,37 @@ class App {
   }
 
   /**
+   * Tell the record-out options what they would capture *right now*.
+   *
+   * Without this the menu would say "the current mix" whatever the current mix
+   * happened to be, and the one question the user has at that moment — did my
+   * solo take? — would go unanswered until they opened the file.
+   */
+  _refreshRecordOut() {
+    const audible = this._audibleIds();
+    const total = this._allTrackIds().length;
+    const n = audible.length;
+
+    for (const button of document.querySelectorAll('.export-option[data-record]')) {
+      const detail = button.querySelector('[data-record-detail]');
+      // Nothing audible is a real state — every track muted — and bouncing
+      // silence is never what was meant, so the option says so and refuses
+      // rather than writing an empty file.
+      button.disabled = n === 0;
+      if (!detail) continue;
+      if (n === 0) {
+        detail.textContent = 'nothing is audible — unmute a track';
+        continue;
+      }
+      const scope = n === total ? `all ${total} tracks` : `${n} of ${total} tracks`;
+      detail.textContent =
+        button.dataset.format === 'wav-mix'
+          ? `${scope}, summed into one file`
+          : `${scope}, one file each`;
+    }
+  }
+
+  /**
    * Download every track at once.
    *
    * The server builds the archive, which for a long analysis takes real time,
@@ -3198,12 +3281,28 @@ class App {
     }
   }
 
-  async _exportAll(format) {
+  async _exportAll(format, recordOut = false) {
     if (!this._jobId || this._exportingAll) return;
 
+    // Record-out narrows the export to whatever is audible; an ordinary export
+    // sends no selection at all and gets everything.
+    const audible = recordOut ? this._audibleIds() : null;
+    if (recordOut && audible.length === 0) {
+      const nothing = 'Nothing is audible to record. Unmute or unsolo a track first.';
+      this._setNotice(nothing);
+      this._announce(nothing);
+      return;
+    }
+
     const info = (this._exportEstimate && this._exportEstimate[format]) || null;
-    const files = info ? Number(info.files) || 0 : 0;
-    if (info && files === 0) {
+    const files = recordOut
+      ? format === 'wav-mix'
+        ? 1
+        : audible.length
+      : info
+        ? Number(info.files) || 0
+        : 0;
+    if (!recordOut && info && files === 0) {
       const nothing = 'There is nothing to export in that format.';
       this._setNotice(nothing);
       this._announce(nothing);
@@ -3232,12 +3331,12 @@ class App {
     // The cost is that we no longer see the X-Export-Included / X-Export-Skipped
     // response headers, so the counts below come from the estimate fetched when
     // the workbench loaded. That is the same data the server derives them from.
-    const url = this._api.exportAllUrl(this._jobId, format);
+    const url = this._api.exportAllUrl(this._jobId, format, audible ? audible.join(',') : null);
 
     this._exportingAll = true;
     const summary = document.getElementById('export-all-summary');
     const previous = summary ? summary.textContent : 'Export all';
-    if (summary) summary.textContent = 'Preparing…';
+    if (summary) summary.textContent = recordOut ? 'Recording…' : 'Preparing…';
 
     try {
       // A real anchor with a real href, clicked inside the user's own click
@@ -3261,13 +3360,22 @@ class App {
       link.click();
       link.remove();
 
-      const skipped = Math.max(0, (this._summary ? this._summary.tracks.length : files) - files);
-      const message = skipped
-        ? `Preparing ${files} file${files === 1 ? '' : 's'}. ` +
-          `${skipped} track${skipped === 1 ? ' is' : 's are'} not included — see MANIFEST.txt inside.`
-        : `Preparing ${files} file${files === 1 ? '' : 's'}. Your browser will save it when it is ready.`;
+      const total = this._allTrackIds().length;
+      const skipped = recordOut
+        ? Math.max(0, total - audible.length)
+        : Math.max(0, (this._summary ? this._summary.tracks.length : files) - files);
+      const message = recordOut
+        ? format === 'wav-mix'
+          ? `Recording out ${audible.length} track${audible.length === 1 ? '' : 's'} ` +
+            'as one WAV. Your browser will save it when it is ready.'
+          : `Recording out ${audible.length} track${audible.length === 1 ? '' : 's'}. ` +
+            'Your browser will save the zip when it is ready.'
+        : skipped
+          ? `Preparing ${files} file${files === 1 ? '' : 's'}. ` +
+            `${skipped} track${skipped === 1 ? ' is' : 's are'} not included — see MANIFEST.txt inside.`
+          : `Preparing ${files} file${files === 1 ? '' : 's'}. Your browser will save it when it is ready.`;
       this._announce(message);
-      this._setNotice(skipped ? message : null);
+      this._setNotice(!recordOut && skipped ? message : null);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
       this._setNotice(null);
@@ -3617,5 +3725,6 @@ export {
   BoundedPlayback,
   estimateDecodedBytes,
   excludeKey,
+  audibleIds,
   PLAYBACK_MEMORY_BUDGET_BYTES,
 };

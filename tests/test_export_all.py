@@ -238,7 +238,9 @@ def test_estimate_reports_every_format(client, job):
     data = client.get(f"/api/jobs/{job_id}/export/estimate").json()
 
     assert data["track_count"] == len(summary["tracks"])
-    assert set(data["formats"]) == {"wav", "wav-tones", "mid", "mid-single"}
+    assert set(data["formats"]) == {"wav", "wav-tones", "wav-mix", "mid", "mid-single"}
+    # A bounce is one file however many tracks went into it.
+    assert data["formats"]["wav-mix"]["files"] == 1
     assert data["formats"]["wav"]["bytes"] > data["formats"]["mid"]["bytes"]
     assert data["formats"]["wav"]["files"] == len(summary["tracks"])
     # Tones-only is exactly one file smaller: the residual.
