@@ -3074,7 +3074,8 @@ class App {
     } catch {
       return;
     }
-    for (const [format, info] of Object.entries(data.formats || {})) {
+    this._exportEstimate = data.formats || {};
+    for (const [format, info] of Object.entries(this._exportEstimate)) {
       const el = document.querySelector(`[data-detail="${format}"]`);
       if (!el || !info) continue;
       const files = Number(info.files) || 0;
@@ -3101,39 +3102,77 @@ class App {
    */
   async _exportAll(format) {
     if (!this._jobId || this._exportingAll) return;
-    this._exportingAll = true;
+
+    const info = (this._exportEstimate && this._exportEstimate[format]) || null;
+    const files = info ? Number(info.files) || 0 : 0;
+    if (info && files === 0) {
+      const nothing = 'There is nothing to export in that format.';
+      this._setBanner(nothing);
+      this._announce(nothing);
+      return;
+    }
 
     const menu = document.getElementById('export-all');
-    const summary = document.getElementById('export-all-summary');
-    const previous = summary ? summary.textContent : '';
-    if (summary) summary.textContent = 'Preparing…';
     if (menu) menu.open = false;
 
-    try {
-      const { blob, filename, included, skipped } = await this._api.exportAll(
-        this._jobId,
-        format
-      );
-      this._saveBlob(blob, filename);
+    // *** THE BROWSER DOWNLOADS THIS ITSELF. WE DO NOT FETCH IT. ***
+    //
+    // The obvious implementation — fetch, response.blob(), object URL, click a
+    // hidden <a> — is what every "download a file" snippet shows, and it is
+    // wrong here for one decisive reason: blob() buffers the ENTIRE archive in
+    // memory before a single byte reaches disk. A ten-minute analysis is about
+    // 3.2 GB of WAV. The tab cannot hold that, so the download simply never
+    // happens, and because the failure is an allocation rather than an
+    // exception there is often nothing useful to report either.
+    //
+    // Navigating to the URL instead hands the transfer to the browser, which
+    // streams it straight to disk with no memory ceiling, shows its own
+    // progress, and lets the user cancel. The server already sends
+    // Content-Disposition: attachment, so this downloads rather than navigates
+    // away — the page stays exactly as it is.
+    //
+    // The cost is that we no longer see the X-Export-Included / X-Export-Skipped
+    // response headers, so the counts below come from the estimate fetched when
+    // the workbench loaded. That is the same data the server derives them from.
+    const url = this._api.exportAllUrl(this._jobId, format);
 
+    this._exportingAll = true;
+    const summary = document.getElementById('export-all-summary');
+    const previous = summary ? summary.textContent : 'Export all';
+    if (summary) summary.textContent = 'Preparing…';
+
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.hidden = true;
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      // The iframe only needs to live long enough for the browser to see the
+      // response headers and take over the transfer; removing it afterwards
+      // does not cancel a download already in progress.
+      setTimeout(() => iframe.remove(), 60_000);
+
+      const skipped = Math.max(0, (this._summary ? this._summary.tracks.length : files) - files);
       const message = skipped
-        ? `Exported ${included} file${included === 1 ? '' : 's'}. ` +
-          `${skipped} track${skipped === 1 ? ' was' : 's were'} skipped — see MANIFEST.txt inside.`
-        : `Exported ${included} file${included === 1 ? '' : 's'}.`;
+        ? `Preparing ${files} file${files === 1 ? '' : 's'}. ` +
+          `${skipped} track${skipped === 1 ? ' is' : 's are'} not included — see MANIFEST.txt inside.`
+        : `Preparing ${files} file${files === 1 ? '' : 's'}. Your browser will save it when it is ready.`;
       this._announce(message);
-      // Skipped tracks reach the banner as well as the announcer: it is the
-      // one outcome a user might otherwise not notice, because a download that
-      // arrives looks like a download that worked.
       if (skipped) this._setBanner(message);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : GENERIC_ERROR;
       this._setBanner(message);
       this._announce(message);
     } finally {
-      this._exportingAll = false;
-      if (summary) summary.textContent = previous || 'Export all';
+      // A large archive takes real time to build server-side, and the button
+      // must not stay stuck on "Preparing…" for a transfer we can no longer
+      // observe. Released on a timer rather than on completion, deliberately.
+      setTimeout(() => {
+        this._exportingAll = false;
+        if (summary) summary.textContent = previous || 'Export all';
+      }, 2500);
     }
   }
+
 
   async _exportTrack(trackId, format) {
     if (!this._jobId) return;

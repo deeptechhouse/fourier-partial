@@ -60,6 +60,17 @@ class ArchiveFormat(Enum):
     WAV = "wav"
     """A .zip of one .wav per track, including the residual."""
 
+    WAV_TONES = "wav-tones"
+    """A .zip of one .wav per track, EXCLUDING the residual.
+
+    The common case when you want stems. The residual is the breath, the pick
+    and the room -- interesting on its own, and usually not what you want
+    sitting in a folder of notes. Because it is deliberately left out rather
+    than unavailable, the manifest says so explicitly: an archive that is
+    missing a track for a good reason still needs to say which one and why, or
+    it is indistinguishable from one that lost it.
+    """
+
     MIDI = "mid"
     """A .zip of one .mid per track. The residual is excluded -- it is noise."""
 
@@ -75,6 +86,20 @@ class ArchiveFormat(Enum):
     def is_archive(self) -> bool:
         """Whether this produces a .zip rather than a single file."""
         return self is not ArchiveFormat.MIDI_SINGLE
+
+    @property
+    def is_wav(self) -> bool:
+        """Whether this writes audio rather than notes."""
+        return self in (ArchiveFormat.WAV, ArchiveFormat.WAV_TONES)
+
+    @property
+    def includes_residual(self) -> bool:
+        """Whether the residual track belongs in this export.
+
+        MIDI cannot take it at all (it is noise, with no notes to write), and
+        WAV_TONES leaves it out by choice.
+        """
+        return self is ArchiveFormat.WAV
 
     @property
     def extension(self) -> str:
@@ -128,10 +153,15 @@ def estimate_bytes(result: AnalysisResult, fmt: ArchiveFormat) -> int:
     be pessimistic is much better received than one that turns out to be
     optimistic.
     """
-    if fmt is ArchiveFormat.WAV:
+    if fmt.is_wav:
         # 3 bytes per sample at 24-bit, plus a negligible header per file.
         samples = result.original.shape[0]
-        return int(samples * 3 * len(result.tracks))
+        n = sum(
+            1
+            for t in result.tracks
+            if fmt.includes_residual or t.kind is not TrackKind.RESIDUAL
+        )
+        return int(samples * 3 * n)
 
     # MIDI is orders of magnitude smaller and depends on note density rather
     # than duration. A few tens of KB per track is a generous allowance.
@@ -171,7 +201,7 @@ def _manifest(result: AnalysisResult, report: ArchiveReport) -> str:
         "",
     ]
 
-    if report.format is ArchiveFormat.WAV:
+    if report.format.is_wav:
         lines += [
             "THESE FILES SUM BACK TO THE ORIGINAL RECORDING.",
             "",
@@ -249,11 +279,24 @@ def build_archive(
         return _build_single_midi(result, destination)
 
     report = ArchiveReport(path=destination, format=fmt)
-    exporter = WavExporter(BULK_WAV_SUBTYPE) if fmt is ArchiveFormat.WAV else MidiExporter()
-    compression = _WAV_COMPRESSION if fmt is ArchiveFormat.WAV else _MIDI_COMPRESSION
+    exporter = WavExporter(BULK_WAV_SUBTYPE) if fmt.is_wav else MidiExporter()
+    compression = _WAV_COMPRESSION if fmt.is_wav else _MIDI_COMPRESSION
 
     with zipfile.ZipFile(destination, "w", compression=compression, allowZip64=True) as archive:
         for track in result.tracks:
+            if track.kind is TrackKind.RESIDUAL and not fmt.includes_residual and fmt.is_wav:
+                report.skipped.append(
+                    SkippedTrack(
+                        track_id=track.track_id,
+                        label=track.label,
+                        reason=(
+                            "Left out on purpose: you chose the tones-only export. "
+                            "Export as 'wav' to include it."
+                        ),
+                    )
+                )
+                continue
+
             if not exporter.supports(track):
                 report.skipped.append(
                     SkippedTrack(

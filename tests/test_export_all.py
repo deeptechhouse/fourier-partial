@@ -233,14 +233,89 @@ def test_filenames_have_no_path_separators_or_oddities(client, job):
 # =============================================================================
 
 
-def test_estimate_reports_all_three_formats(client, job):
+def test_estimate_reports_every_format(client, job):
     job_id, summary = job
     data = client.get(f"/api/jobs/{job_id}/export/estimate").json()
 
     assert data["track_count"] == len(summary["tracks"])
-    assert set(data["formats"]) == {"wav", "mid", "mid-single"}
+    assert set(data["formats"]) == {"wav", "wav-tones", "mid", "mid-single"}
     assert data["formats"]["wav"]["bytes"] > data["formats"]["mid"]["bytes"]
     assert data["formats"]["wav"]["files"] == len(summary["tracks"])
+    # Tones-only is exactly one file smaller: the residual.
+    assert data["formats"]["wav-tones"]["files"] == len(summary["tracks"]) - 1
+    assert data["formats"]["wav-tones"]["bytes"] < data["formats"]["wav"]["bytes"]
+
+
+# =============================================================================
+# WAV without the residual — the stems case
+# =============================================================================
+
+
+def test_wav_tones_excludes_the_residual(client, job):
+    """The whole point of the format: stems, without the noise track."""
+    job_id, summary = job
+    response = client.get(f"/api/jobs/{job_id}/export?format=wav-tones")
+
+    assert response.status_code == 200
+    archive = _zip(response)
+    wavs = [n for n in archive.namelist() if n.endswith(".wav")]
+
+    assert len(wavs) == len(summary["tracks"]) - 1
+    residual = next(t for t in summary["tracks"] if t["kind"] == "residual")
+    assert not any(f"track{residual['track_id']:03d}" in n for n in wavs)
+    assert response.headers["X-Export-Skipped"] == "1"
+
+
+def test_wav_tones_says_the_omission_was_deliberate(client, job):
+    """A missing track needs a reason, or it reads as a lost track.
+
+    "Left out on purpose" and "failed to write" produce the same-looking
+    archive, so the manifest has to distinguish them.
+    """
+    job_id, _ = job
+    manifest = _zip(client.get(f"/api/jobs/{job_id}/export?format=wav-tones")).read(
+        "MANIFEST.txt"
+    ).decode()
+
+    assert "NOT INCLUDED" in manifest
+    assert "on purpose" in manifest.lower()
+    # And it must say how to get it, rather than just that it is absent.
+    assert "wav" in manifest.lower()
+
+
+def test_wav_tones_files_are_playable_audio(client, job):
+    job_id, _ = job
+    archive = _zip(client.get(f"/api/jobs/{job_id}/export?format=wav-tones"))
+    name = next(n for n in archive.namelist() if n.endswith(".wav"))
+    audio, rate = sf.read(io.BytesIO(archive.read(name)), dtype="float32")
+    assert rate == SR and len(audio) > 0
+
+
+def test_wav_tones_does_not_sum_to_the_original(client, job):
+    """It cannot, and the difference should be the residual exactly.
+
+    Worth pinning: someone who exports tones-only and finds the sum quiet or
+    thin has not hit a bug — they removed the noise on purpose, and this is the
+    arithmetic that says by how much.
+    """
+    job_id, summary = job
+    archive = _zip(client.get(f"/api/jobs/{job_id}/export?format=wav-tones"))
+
+    mixed = None
+    for name in (n for n in archive.namelist() if n.endswith(".wav")):
+        audio, _ = sf.read(io.BytesIO(archive.read(name)), dtype="float64")
+        mixed = audio if mixed is None else mixed + audio
+
+    residual_id = next(t["track_id"] for t in summary["tracks"] if t["kind"] == "residual")
+    residual, _ = sf.read(
+        io.BytesIO(client.get(f"/api/jobs/{job_id}/tracks/{residual_id}/audio").content),
+        dtype="float64",
+    )
+    original, _ = sf.read(
+        io.BytesIO(client.get(f"/api/jobs/{job_id}/mixdown").content), dtype="float64"
+    )
+
+    assert np.max(np.abs((mixed + residual) - original)) < 1e-5
 
 
 def test_estimate_is_not_wildly_wrong(client, job):

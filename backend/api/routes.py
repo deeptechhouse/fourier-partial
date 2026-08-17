@@ -8,7 +8,7 @@ API SURFACE
     GET    /api/jobs/{job_id}/tracks             track metadata (no audio)
     GET    /api/jobs/{job_id}/tracks/{tid}/audio rendered PCM for playback
     GET    /api/jobs/{job_id}/tracks/{tid}/export ?format=wav|mid
-    GET    /api/jobs/{job_id}/export             ?format=wav|mid|mid-single -> everything
+    GET    /api/jobs/{job_id}/export             ?format=wav|wav-tones|mid|mid-single
     GET    /api/jobs/{job_id}/export/estimate    how big each format would be
     GET    /api/jobs/{job_id}/mixdown            ?exclude=ids -> all tracks, minus those
     GET    /api/health                           liveness
@@ -647,7 +647,7 @@ async def export_track(
 @router.get("/jobs/{job_id}/export")
 async def export_all(
     job_id: str,
-    format: str = Query(default="wav", pattern="^(wav|mid|mid-single)$"),
+    format: str = Query(default="wav", pattern="^(wav|wav-tones|mid|mid-single)$"),
 ) -> FileResponse:
     """Export every track at once.
 
@@ -711,8 +711,12 @@ async def export_estimate(job_id: str) -> dict[str, object]:
             fmt.value: {
                 "bytes": estimate_bytes(result, fmt),
                 "files": (
-                    len(result.tracks)
-                    if fmt is ArchiveFormat.WAV
+                    sum(
+                        1
+                        for t in result.tracks
+                        if fmt.includes_residual or t.kind is not TrackKind.RESIDUAL
+                    )
+                    if fmt.is_wav
                     else min(exportable_as_midi, 15)
                     if fmt is ArchiveFormat.MIDI_SINGLE
                     else exportable_as_midi
