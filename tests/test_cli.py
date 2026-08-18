@@ -383,3 +383,65 @@ class TestUsage:
         out = tmp_path / "out"
         assert run("one", str(source), "-o", str(out), "-f", "mid")[0] == 0
         assert {p.name for p in out.iterdir()} == {"in_mid.zip"}
+
+
+# =============================================================================
+# The launcher script
+# =============================================================================
+
+
+class TestLauncher:
+    """`./fourier-partial`, run as a real subprocess.
+
+    Worth the cost of spawning a shell because the bug this catches is invisible
+    to every in-process test: the launcher's job is to make `backend`
+    importable, and the obvious way to do that -- `cd` to the project root --
+    silently reinterprets every relative path the user typed. `fourier-partial
+    one take.wav` then looks for take.wav inside the install directory. Nothing
+    errors; it simply cannot find a file that is plainly there.
+    """
+
+    LAUNCHER = Path(__file__).resolve().parent.parent / "fourier-partial"
+
+    def _run(self, cwd: Path, *args: str):
+        import subprocess
+
+        return subprocess.run(
+            [str(self.LAUNCHER), *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+    def test_the_launcher_is_executable(self):
+        import os
+
+        assert self.LAUNCHER.is_file()
+        assert os.access(self.LAUNCHER, os.X_OK), "chmod +x fourier-partial"
+
+    def test_it_runs_from_an_unrelated_directory(self, tmp_path):
+        result = self._run(tmp_path, "settings")
+        assert result.returncode == 0, result.stderr
+        assert "window_size" in result.stdout
+
+    def test_a_relative_path_resolves_against_the_users_directory(self, tmp_path):
+        """The regression. `one take.wav` must mean the caller's take.wav."""
+        write_tone(tmp_path / "take.wav")
+        result = self._run(tmp_path, "one", "take.wav", "-f", "wav")
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert (tmp_path / "take_wav.zip").is_file()
+
+    def test_a_relative_output_directory_lands_where_the_user_is(self, tmp_path):
+        write_tone(tmp_path / "take.wav")
+        result = self._run(tmp_path, "one", "./take.wav", "-o", "./out", "-f", "wav")
+        assert result.returncode == 0, result.stderr
+        assert (tmp_path / "out" / "take_wav.zip").is_file()
+
+    def test_a_path_with_spaces_survives(self, tmp_path):
+        """Field recordings live in folders with spaces in the name."""
+        folder = tmp_path / "field recordings"
+        write_tone(folder / "a take.wav")
+        result = self._run(tmp_path, "many", "./field recordings", "-o", "./out")
+        assert result.returncode == 0, result.stderr
+        assert (tmp_path / "out" / "a take_wav.zip").is_file()

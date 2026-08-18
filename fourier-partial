@@ -34,7 +34,17 @@ if [ ! -x "$PYTHON" ]; then
     exit 3
 fi
 
-# `cd` so that `backend` is importable, and exec so signals (Ctrl-C on a long
-# batch) reach Python directly instead of being swallowed by this shell.
-cd "$ROOT"
+# Make `backend` importable WITHOUT changing directory.
+#
+# The obvious version of this line is `cd "$ROOT"` -- and it is wrong in a way
+# that is easy to miss and breaks almost every real invocation: it silently
+# reinterprets every relative path the user typed as relative to the project,
+# so `fourier-partial one take.wav` looks for take.wav inside the install
+# directory rather than in the folder they are standing in. PYTHONPATH gets
+# the import working while leaving the working directory alone.
+#
+# exec, so signals reach Python directly -- Ctrl-C on a long batch should stop
+# the run, not just this shell.
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
 exec "$PYTHON" -m backend.cli "$@"

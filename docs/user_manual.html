@@ -1,0 +1,1630 @@
+<title>Fourier Partial Manual</title>
+<style>
+/* ==========================================================================
+   fourier_partial — user manual
+   Self-contained: no external fonts, scripts, styles or images.
+   ========================================================================== */
+
+:root {
+  --paper:      #faf8f3;
+  --card:       #ffffff;
+  --sunk:       #f1eee6;
+  --ink:        #1a1a1f;
+  --ink-soft:   #4a4a55;
+  --ink-faint:  #7d7d8a;
+  --rule:       #e4e0d6;
+  --rule-soft:  #efece4;
+
+  /* The app's own frequency ramp, low to high. Sections borrow it so the
+     manual is colour-coded by the same logic the interface is. */
+  --s0: #6b4fd8;
+  --s1: #3f6fd0;
+  --s2: #1f93b4;
+  --s3: #1f9a80;
+  --s4: #7a9426;
+  --s5: #b8781a;
+
+  --warn:   #9a6a12;
+  --warn-bg:#fdf6e6;
+  --danger: #b4442f;
+  --danger-bg:#fdeeea;
+  --ok:     #1f7a4a;
+  --ok-bg:  #ecf7f0;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display: Charter, "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --shadow: 0 1px 2px rgb(20 18 12 / 6%), 0 8px 24px rgb(20 18 12 / 5%);
+  --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:   #0f0f14;
+    --card:    #16161d;
+    --sunk:    #1b1b23;
+    --ink:     #e8e4d9;
+    --ink-soft:#a8a49a;
+    --ink-faint:#7c7970;
+    --rule:    #282833;
+    --rule-soft:#1f1f28;
+
+    --s0: #8f76ef; --s1: #6b9bec; --s2: #35b5d8;
+    --s3: #3fc9a8; --s4: #a8cf5c; --s5: #e8a33d;
+
+    --warn: #e8a33d;  --warn-bg:  #2a2113;
+    --danger: #e8836f; --danger-bg: #2a1512;
+    --ok: #4fc98a;    --ok-bg:    #12261b;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:   #0f0f14;
+  --card:    #16161d;
+  --sunk:    #1b1b23;
+  --ink:     #e8e4d9;
+  --ink-soft:#a8a49a;
+  --ink-faint:#7c7970;
+  --rule:    #282833;
+  --rule-soft:#1f1f28;
+
+  --s0: #8f76ef; --s1: #6b9bec; --s2: #35b5d8;
+  --s3: #3fc9a8; --s4: #a8cf5c; --s5: #e8a33d;
+
+  --warn: #e8a33d;  --warn-bg:  #2a2113;
+  --danger: #e8836f; --danger-bg: #2a1512;
+  --ok: #4fc98a;    --ok-bg:    #12261b;
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 30%);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Shell ------------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 48px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 32px 96px;
+}
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; gap: 0; padding: 0 20px 64px; }
+}
+
+/* --- Masthead ---------------------------------------------------------- */
+
+.masthead {
+  grid-column: 1 / -1;
+  padding: 56px 0 28px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.masthead h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 5vw, 3rem);
+  font-weight: 600;
+  line-height: 1.05;
+  margin: 0 0 10px;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.masthead .kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
+}
+
+.masthead .standfirst {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--ink-soft);
+  font-size: 1.03rem;
+}
+
+/* The frequency ramp, used as the masthead's rule. It is the app's own
+   low-to-high colour scale, so the manual opens on the same visual logic
+   the track list uses. */
+.ramp {
+  display: flex;
+  height: 4px;
+  width: 100%;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 22px;
+  grid-column: 1 / -1;
+}
+.ramp span { flex: 1; }
+
+/* --- Controls in the masthead ------------------------------------------ */
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+button:hover { border-color: var(--ink-faint); }
+button:focus-visible { outline: 2px solid var(--s2); outline-offset: 2px; }
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--card);
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 7px 14px;
+  color: var(--ink-soft);
+}
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+}
+
+/* --- Sidebar ----------------------------------------------------------- */
+
+.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; }
+@media (max-width: 900px) {
+  .toc {
+    position: static; max-height: none; margin-bottom: 40px;
+    padding-bottom: 24px; border-bottom: 1px solid var(--rule);
+  }
+}
+
+.toc h2 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.toc a {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 14px;
+  border-left: 2px solid transparent;
+}
+.toc a:hover { background: var(--sunk); color: var(--ink); }
+.toc a.is-current { color: var(--ink); font-weight: 500; background: var(--sunk); }
+.toc a .n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.1em;
+}
+.toc a.is-current .n { color: inherit; }
+
+/* --- Sections ---------------------------------------------------------- */
+
+section { scroll-margin-top: 24px; margin-bottom: 60px; }
+
+section > h2 {
+  font-family: var(--font-display);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  padding-top: 10px;
+  border-top: 3px solid var(--accent, var(--rule));
+  text-wrap: balance;
+}
+section > .lede {
+  margin: 0 0 26px;
+  color: var(--ink-soft);
+  max-width: 62ch;
+  font-size: 1.02rem;
+}
+
+h3 {
+  font-size: 1.06rem;
+  font-weight: 600;
+  margin: 34px 0 10px;
+  letter-spacing: -0.005em;
+}
+h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 22px 0 8px;
+  color: var(--ink-soft);
+}
+p { max-width: 68ch; margin: 0 0 14px; }
+ul, ol.steps { max-width: 68ch; padding-left: 20px; margin: 0 0 16px; }
+li { margin-bottom: 7px; }
+strong { font-weight: 600; }
+a { color: var(--s2); }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  background: var(--sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* --- Cards, notes ------------------------------------------------------ */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin: 0 0 18px;
+  box-shadow: var(--shadow);
+}
+
+.note {
+  border-left: 3px solid var(--accent, var(--s2));
+  background: var(--sunk);
+  border-radius: 0 6px 6px 0;
+  padding: 13px 16px;
+  margin: 0 0 18px;
+  font-size: 0.95rem;
+  max-width: 70ch;
+}
+.note p:last-child { margin-bottom: 0; }
+.note .tag {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+.note.warn   { border-left-color: var(--warn);   background: var(--warn-bg); }
+.note.danger { border-left-color: var(--danger); background: var(--danger-bg); }
+.note.ok     { border-left-color: var(--ok);     background: var(--ok-bg); }
+
+/* --- Command blocks ---------------------------------------------------- */
+
+.cmd {
+  position: relative;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  margin: 0 0 14px;
+  overflow: hidden;
+}
+.cmd pre {
+  margin: 0;
+  padding: 14px 82px 14px 16px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+.cmd .copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 11px;
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+}
+.cmd .prompt { color: var(--ink-faint); user-select: none; }
+.cmd .flag { color: var(--s2); }
+.cmd .cmt  { color: var(--ink-faint); font-style: italic; }
+
+/* --- Tables ------------------------------------------------------------ */
+
+.tablewrap { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--rule); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--card); }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+  background: var(--sunk);
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td code { background: transparent; border: 0; padding: 0; color: var(--s2); }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; }
+
+/* --- Mode switching (app vs terminal) ---------------------------------- */
+
+body[data-mode="app"]  .only-cli { display: none; }
+body[data-mode="cli"]  .only-app { display: none; }
+
+.modehint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+/* --- Builder ----------------------------------------------------------- */
+
+.builder { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 16px 20px; margin-bottom: 18px; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > label, .field > .flabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.field select, .field input[type="text"], .field input[type="number"] {
+  font: inherit;
+  font-size: 13.5px;
+  padding: 7px 9px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  width: 100%;
+}
+.field select:focus-visible, .field input:focus-visible { outline: 2px solid var(--s2); outline-offset: 1px; }
+.checks { display: flex; flex-direction: column; gap: 5px; }
+.checks label { display: flex; gap: 7px; align-items: center; font-size: 13.5px; color: var(--ink-soft); cursor: pointer; }
+.fmtgrid { display: flex; flex-wrap: wrap; gap: 6px; }
+.fmtgrid label {
+  display: inline-flex; gap: 6px; align-items: center;
+  font-size: 12.5px; font-family: var(--font-mono);
+  border: 1px solid var(--rule); border-radius: 5px;
+  padding: 5px 9px; cursor: pointer; background: var(--card);
+}
+.fmtgrid input { margin: 0; }
+
+/* --- Depth visualiser -------------------------------------------------- */
+
+.passes { display: flex; flex-direction: column; gap: 7px; margin: 16px 0 8px; }
+.pass {
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+.pass .plabel { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); }
+.bar {
+  height: 26px;
+  border-radius: 4px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  background: var(--sunk);
+}
+.bar i {
+  display: block;
+  font-style: normal;
+  transition: width 0.28s ease;
+}
+.bar i.kept { background: var(--s3); }
+.bar i.dropped {
+  background: repeating-linear-gradient(
+    45deg, var(--ink-faint), var(--ink-faint) 3px, transparent 3px, transparent 7px
+  );
+  opacity: 0.5;
+}
+.bar i.left { background: var(--s0); opacity: 0.28; }
+.pass .pnote { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); white-space: nowrap; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--ink-soft); margin-top: 6px; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.swatch { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--rule); }
+.swatch.kept { background: var(--s3); }
+.swatch.dropped { background: repeating-linear-gradient(45deg, var(--ink-faint), var(--ink-faint) 3px, transparent 3px, transparent 7px); opacity: .55; }
+.swatch.left { background: var(--s0); opacity: .28; }
+
+.verdict {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 0.94rem;
+  border-left: 3px solid var(--ok);
+  background: var(--ok-bg);
+}
+.verdict.broken { border-left-color: var(--warn); background: var(--warn-bg); }
+.verdict b { display: block; margin-bottom: 3px; }
+
+/* --- Settings reference ------------------------------------------------ */
+
+.searchrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.searchrow input[type="search"] {
+  font: inherit; font-size: 14px; padding: 8px 12px; flex: 1; min-width: 200px;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 6px;
+}
+.searchrow input:focus-visible { outline: 2px solid var(--s2); outline-offset: 1px; }
+.count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+
+.setting {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: var(--card);
+}
+.setting.hidden { display: none; }
+.setting .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
+.setting .nm { font-family: var(--font-mono); font-size: 13px; color: var(--s2); }
+.setting .hu { font-weight: 600; font-size: 14.5px; }
+.setting .rng { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.setting p { font-size: 14px; margin: 7px 0 0; color: var(--ink-soft); max-width: none; }
+.setting .arrows { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12.5px; color: var(--ink-faint); }
+.badge {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  border: 1px solid var(--rule); border-radius: 3px; padding: 1px 5px; color: var(--ink-faint);
+}
+.grouphead {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-faint); margin: 22px 0 8px;
+}
+
+/* --- Chooser ----------------------------------------------------------- */
+
+.chooser { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.choice {
+  border: 1px solid var(--rule); border-radius: var(--radius); padding: 15px 16px;
+  background: var(--card); display: flex; flex-direction: column; gap: 7px;
+}
+.choice .want { font-weight: 600; font-size: 14.5px; }
+.choice .then { font-size: 13.5px; color: var(--ink-soft); }
+.choice .how { font-family: var(--font-mono); font-size: 12px; color: var(--s2); word-break: break-word; }
+
+kbd {
+  font-family: var(--font-mono); font-size: 11.5px;
+  border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px;
+  padding: 1px 5px; background: var(--card);
+}
+
+footer {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+@media print {
+  .toc, .controls, .cmd .copy { display: none; }
+  .shell { grid-template-columns: 1fr; }
+  body[data-mode] .only-cli, body[data-mode] .only-app { display: revert; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <div>
+      <p class="kicker">fourier_partial &middot; user manual</p>
+      <h1>Taking a sound apart</h1>
+      <p class="standfirst">
+        How to use the app and the command-line tool: analysing audio, listening to
+        the pieces, digging under what you can hear, and getting files back out.
+      </p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Show instructions for">
+        <button id="mode-app" aria-pressed="true">The app</button>
+        <button id="mode-cli" aria-pressed="false">Command line</button>
+        <button id="mode-both" aria-pressed="false">Both</button>
+      </div>
+      <button id="theme">Dark</button>
+    </div>
+    <div class="ramp" aria-hidden="true">
+      <span style="background:var(--s0)"></span><span style="background:var(--s1)"></span>
+      <span style="background:var(--s2)"></span><span style="background:var(--s3)"></span>
+      <span style="background:var(--s4)"></span><span style="background:var(--s5)"></span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol id="toc-list"></ol>
+  </nav>
+
+  <main>
+
+    <!-- ================================================================= -->
+    <section id="what" style="--accent: var(--s2)">
+      <h2>What this program does</h2>
+      <p class="lede">
+        It takes a piece of audio and splits it into separate tracks, each one a single
+        pitch you can hear on its own. Play them all together and you get your file back,
+        exactly.
+      </p>
+
+      <p>
+        A recorded sound is a mixture. A cymbal is not one thing; it is dozens of tones
+        ringing at once. This program finds those tones, follows each one as it moves and
+        fades, and gives each its own track — so you can mute the ones you do not want,
+        solo the one you do, and export whichever you keep.
+      </p>
+
+      <h3>The one promise worth understanding</h3>
+      <p>
+        Whatever the analysis finds, one track is always called <strong>Residual</strong>.
+        It holds everything the tones did not account for: breath, hiss, the sharp edge of
+        an attack. It is not a leftovers bin that happens to be roughly right — it is
+        computed as a subtraction:
+      </p>
+      <div class="cmd"><pre>residual = your audio &minus; (all the tones added together)</pre></div>
+      <p>
+        Which means the parts cannot fail to add back up. Unmute everything and you are
+        listening to your original file, sample for sample. That stays true no matter how
+        good or bad the analysis was, and it stays true however many passes you run.
+      </p>
+
+      <div class="note" style="--accent: var(--s0)">
+        <span class="tag">Why some things cannot be separated</span>
+        <p>
+          A sound that is sharp in time cannot be sharp in pitch. That is not a limitation
+          of this program but of physics — the same uncertainty principle that governs
+          particles. A click has no pitch to find, so it lands in the residual, and no
+          setting will change that. The residual is where the physics goes, not where the
+          failures go.
+        </p>
+      </div>
+
+      <h3>Two ways in</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>&nbsp;</th><th>The app</th><th>Command line</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Best for</strong></td><td>One file you are curious about</td><td>Sixty files you already decided about</td></tr>
+            <tr><td><strong>You get</strong></td><td>Waveforms, mute, solo, listening</td><td>Files on disk, no interaction</td></tr>
+            <tr><td><strong>Start it</strong></td><td>Double-click <code>FourierPartial.app</code></td><td><code>./fourier-partial</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        They are the same program. Same analysis, same settings, same exporters, same
+        presets — a preset you save in the app works on the command line and the reverse.
+      </p>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="start" style="--accent: var(--s0)">
+      <h2>Getting started</h2>
+      <p class="lede">Under a minute either way.</p>
+
+      <div class="only-app">
+        <p class="modehint">In the app</p>
+        <ol class="steps">
+          <li>Double-click <strong>FourierPartial.app</strong>. A browser tab opens by itself.</li>
+          <li>Drag an audio file onto the page, or click to browse.</li>
+          <li>Wait. A progress bar tells you which stage it is on.</li>
+          <li>Tracks appear, one row each, with a waveform and a name like <code>G3</code> or <code>A4 + 3 harmonics</code>.</li>
+          <li>Press <strong>Play</strong>. Use <strong>M</strong> and <strong>S</strong> on any row to mute or solo it.</li>
+        </ol>
+        <p>
+          Accepts WAV, FLAC, AIFF, MP3 and more, mono or stereo, up to
+          <strong>ten minutes</strong>. Nothing is uploaded anywhere — the program runs on
+          your machine and the "server" is your own computer talking to itself.
+        </p>
+      </div>
+
+      <div class="only-cli">
+        <p class="modehint">On the command line</p>
+        <p>Put it on your PATH once:</p>
+        <div class="cmd"><pre><span class="prompt">$ </span>ln -s <span class="flag">"$(pwd)/fourier-partial"</span> /usr/local/bin/fourier-partial</pre></div>
+        <p>Then, from anywhere:</p>
+        <div class="cmd"><pre><span class="prompt">$ </span>fourier-partial one take.wav
+<span class="cmt"># writes take_wav.zip next to take.wav</span></pre></div>
+        <p>Or a whole folder at once:</p>
+        <div class="cmd"><pre><span class="prompt">$ </span>fourier-partial many ./recordings <span class="flag">-o</span> ./out</pre></div>
+        <p>
+          Without the symlink, run it by path — <code>/path/to/fourier-partial one take.wav</code>
+          — or as <code>python3 -m backend.cli</code> from the project folder.
+        </p>
+      </div>
+
+      <div class="note warn">
+        <span class="tag">How long it takes</span>
+        <p>
+          Roughly real time on a modern machine: a one-minute file takes a few seconds, a
+          ten-minute file around a minute and needs a couple of gigabytes of memory while
+          it works. Raising <strong>Passes</strong> multiplies that — see
+          <a href="#depth">Looking more than once</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="listen" style="--accent: var(--s3)">
+      <h2>Listening to the pieces</h2>
+      <p class="lede">
+        The point of the track list is to answer a question by ear: what is this sound
+        actually made of?
+      </p>
+
+      <h3>Reading a row</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>What you see</th><th>What it means</th></tr></thead>
+          <tbody>
+            <tr><td><code>G3</code></td><td>One tone, near the note G3.</td></tr>
+            <tr><td><code>A4 &minus;12c</code></td><td>Twelve cents flat of A4. A cent is a hundredth of a semitone.</td></tr>
+            <tr><td><code>C5 + 3 harmonics</code></td><td>A fundamental with three of its harmonics, bundled as one voice.</td></tr>
+            <tr><td><code>Residual</code></td><td>Everything the tones did not explain. Always present.</td></tr>
+            <tr><td><code>&middot; L2</code></td><td>Found on the second pass. Only appears if you used more than one.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Rows are grouped by pitch, so a long recording reads as "G4, seven times" rather
+        than seven near-identical rows. Click a group to open it.
+      </p>
+
+      <h3>Mute and solo</h3>
+      <ul>
+        <li><strong>Mute</strong> silences that track. Everything else keeps playing.</li>
+        <li><strong>Solo</strong> silences everything else. Solo several and you hear only those.</li>
+        <li>A track that is both muted and soloed is silent — mute wins, because it is the more specific instruction.</li>
+        <li><strong>Clear solos</strong> in the transport puts everything back.</li>
+      </ul>
+      <div class="note ok">
+        <span class="tag">Try this first</span>
+        <p>
+          Solo the residual on its own. It is the fastest way to hear what the analysis
+          could not explain, and it tells you immediately whether your settings are
+          finding the material you care about or leaving it behind.
+        </p>
+      </div>
+
+      <h3>The two views</h3>
+      <p>
+        Each row draws either the <strong>amplitude</strong> (how loud, over time) or the
+        <strong>frequency trajectory</strong> (how the pitch moved). The trajectory view
+        is the one that shows you vibrato, glides and tape wobble as shapes. Toggle it in
+        the transport bar.
+      </p>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="settings" style="--accent: var(--s1)">
+      <h2>Changing how it listens</h2>
+      <p class="lede">
+        Fourteen settings, grouped by the stage they affect. Nothing here is a quality
+        dial — most of them are choosing a side of a trade.
+      </p>
+
+      <div class="only-app">
+        <p class="modehint">In the app</p>
+        <p>
+          The <strong>Settings</strong> panel sits above the drop zone. Move anything and
+          the <strong>Re-analyse</strong> button lights up; the file stays loaded, so you
+          can compare settings without re-importing. <strong>Show advanced</strong>
+          reveals the rest, and <strong>Reset to defaults</strong> puts everything back.
+        </p>
+        <p>
+          Only settings you actually changed are sent. That matters more than it sounds:
+          a ten-minute file gets cheaper defaults chosen after its length is known, and
+          sending every value would override them and make the file unanalysable.
+        </p>
+      </div>
+
+      <div class="only-cli">
+        <p class="modehint">On the command line</p>
+        <div class="cmd"><pre><span class="prompt">$ </span>fourier-partial settings              <span class="cmt"># every setting, with ranges</span>
+<span class="prompt">$ </span>fourier-partial one take.wav <span class="flag">-s</span> window_size=8192 <span class="flag">-s</span> peak_threshold_db=-75</pre></div>
+        <p>
+          <code>-s</code> repeats. Values outside a setting's range are clamped to the
+          nearest legal one and a warning is printed, rather than failing — so a script
+          sweeping a range does not die at step twelve.
+        </p>
+      </div>
+
+      <h3>Presets</h3>
+      <p>Six ship with the program. They set only a few values each; everything else stays default.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Preset</th><th>For</th><th>Sets</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Sharp attacks</strong></td><td>Plucks, drums — where the hit matters more than the pitch</td><td class="num">window 1024, shortest tone 20 ms</td></tr>
+            <tr><td><strong>Sustained and tonal</strong></td><td>Drones, bowed strings, held voice</td><td class="num">window 8192, shortest 150 ms, drift 40c</td></tr>
+            <tr><td><strong>Bells and struck metal</strong></td><td>Inharmonic material, where each partial is interesting alone</td><td class="num">window 8192, harmonic tol. 10c</td></tr>
+            <tr><td><strong>Voice and glides</strong></td><td>Singing, portamento, tape wobble</td><td class="num">drift 200c, gaps 5</td></tr>
+            <tr><td><strong>Dig deep</strong></td><td>Everything findable, including the junk</td><td class="num">threshold &minus;85 dB, no cull, 300 tracks</td></tr>
+            <tr><td><strong>Just the notes</strong></td><td>A handful of usable stems, not a survey</td><td class="num">threshold &minus;40 dB, cull 3%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="only-app">
+        Save your own at the top of the Settings panel. Changing any slider clears the
+        preset name — it stops claiming to be a preset the moment the values stop matching.
+      </p>
+      <div class="only-cli cmd"><pre><span class="prompt">$ </span>fourier-partial presets
+<span class="prompt">$ </span>fourier-partial one bell.wav <span class="flag">--preset</span> <span class="flag">"Bells and struck metal"</span></pre></div>
+
+      <h3>The four settings that matter most</h3>
+      <div class="card">
+        <p><strong>Window size</strong> &mdash; the one true trade-off. Bigger separates
+        pitches that sit close together and smears attacks; smaller sharpens attacks and
+        blurs pitch. You cannot have both. Start here.</p>
+        <p><strong>Quiet-tone threshold</strong> &mdash; the most direct "more tracks /
+        fewer tracks" control. Lower finds quiet detail and more junk.</p>
+        <p><strong>Shortest tone kept</strong> &mdash; your main defence against hiss
+        arriving as notes. Raise it when the track list fills with nonsense.</p>
+        <p style="margin-bottom:0"><strong>Harmonic tolerance</strong> &mdash; how far
+        from an exact multiple a tone can sit and still join the same note. Piano and
+        bells are genuinely stretched, so being strict loses real harmonics.</p>
+      </div>
+
+      <h3 id="reference">Full reference</h3>
+      <div class="searchrow">
+        <input type="search" id="setting-search" placeholder="Filter settings — try “window”, “noise”, “vibrato”…" aria-label="Filter settings">
+        <span class="count" id="setting-count"></span>
+      </div>
+      <div id="settings-list"></div>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="depth" style="--accent: var(--s4)">
+      <h2>Looking more than once</h2>
+      <p class="lede">
+        One pass does not find everything, and not because the analyser is weak. A tone
+        only counts if it is loud enough <em>relative to the loudest tone in the same
+        moment</em> — so anything hiding under something louder is never picked up at all.
+      </p>
+
+      <p>
+        Take the loud thing away and the quiet one becomes the loudest thing left. Analyse
+        again and it is found. That is all these two settings do.
+      </p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Flag</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Passes</strong></td><td><code>--depth N</code></td>
+              <td>Analyse N times, each pass working on what the last could not explain. You keep every pass's tracks.</td>
+            </tr>
+            <tr>
+              <td><strong>Layers to strip first</strong></td><td><code>--strip N</code></td>
+              <td>Run N passes and <em>throw their tracks away</em>, keeping only what they could not explain. Then start. The "what is underneath?" control.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Try it</h3>
+      <div class="card">
+        <div class="builder" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
+          <div class="field">
+            <label for="d-strip">Layers to strip first</label>
+            <input type="number" id="d-strip" min="0" max="4" value="0">
+          </div>
+          <div class="field">
+            <label for="d-depth">Passes to keep</label>
+            <input type="number" id="d-depth" min="1" max="5" value="1">
+          </div>
+        </div>
+        <div class="passes" id="pass-view"></div>
+        <div class="legend">
+          <span><i class="swatch kept"></i> tracks you keep</span>
+          <span><i class="swatch dropped"></i> thrown away</span>
+          <span><i class="swatch left"></i> not yet explained</span>
+        </div>
+        <div class="verdict" id="pass-verdict"></div>
+      </div>
+
+      <div class="note danger">
+        <span class="tag">The one catch, and it is important</span>
+        <p>
+          <strong>Passes</strong> keeps the promise: every pass's tracks plus the final
+          residual still add back to your original file, exactly.
+          <strong>Stripping cannot</strong> — you threw those layers away, so what is left
+          sums to the stripped signal instead. That is the point of the setting, not a
+          bug, and the program never pretends otherwise: the manifest inside a stripped
+          export says <code>THESE FILES DO NOT SUM BACK TO THE ORIGINAL RECORDING</code>
+          and explains why.
+        </p>
+      </div>
+
+      <h3>What to expect</h3>
+      <p>
+        On a test signal — one loud tone with two much quieter ones underneath — a single
+        pass finds <strong>one</strong> track. Four passes find <strong>thirteen</strong>,
+        including both hidden tones, and the reconstruction is still exact.
+      </p>
+      <p>
+        Passes stop early on their own if a pass finds nothing: the residual comes back
+        unchanged, so every further pass would repeat it. You are never charged for
+        depth that had nothing to do.
+      </p>
+
+      <div class="only-cli cmd"><pre><span class="prompt">$ </span>fourier-partial one cymbal.wav <span class="flag">--depth</span> 3
+<span class="prompt">$ </span>fourier-partial one cymbal.wav <span class="flag">--strip</span> 1 <span class="flag">--depth</span> 2   <span class="cmt"># skip the obvious layer</span></pre></div>
+      <p class="only-app">
+        In the app both live in the <strong>How many times it looks</strong> group.
+        "Layers to strip first" is behind <strong>Show advanced</strong>.
+      </p>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="export" style="--accent: var(--s5)">
+      <h2>Getting files out</h2>
+      <p class="lede">Six ways, which sound like more than they are. Pick by what you want to do next.</p>
+
+      <div class="chooser">
+        <div class="choice">
+          <span class="want">Every track as audio</span>
+          <span class="then">One WAV per track, zipped. Adds back to your original.</span>
+          <span class="how">Export all &rarr; WAV<br>-f wav</span>
+        </div>
+        <div class="choice">
+          <span class="want">Every track, no residual</span>
+          <span class="then">The tones only. Will <em>not</em> reconstruct — the noise is missing.</span>
+          <span class="how">Export all &rarr; WAV, tones only<br>-f wav-tones</span>
+        </div>
+        <div class="choice">
+          <span class="want">Just what I am hearing, as one file</span>
+          <span class="then">A bounce of the current mix with mutes and solos applied.</span>
+          <span class="how">Export all &rarr; Record out, one WAV<br>-f wav-mix</span>
+        </div>
+        <div class="choice">
+          <span class="want">Just what I am hearing, separately</span>
+          <span class="then">Only the audible tracks, one file each.</span>
+          <span class="how">Export all &rarr; Record out, separate WAVs</span>
+        </div>
+        <div class="choice">
+          <span class="want">Notes for a synth</span>
+          <span class="then">One MIDI file per track, with pitch bend so glides survive.</span>
+          <span class="how">Export all &rarr; MIDI<br>-f mid</span>
+        </div>
+        <div class="choice">
+          <span class="want">One MIDI file for everything</span>
+          <span class="then">Every track on its own channel in a single file.</span>
+          <span class="how">Export all &rarr; MIDI, single file<br>-f mid-single</span>
+        </div>
+      </div>
+
+      <h3>Record out</h3>
+      <p class="only-app">
+        The <strong>What you're hearing</strong> group in the Export all menu. Its labels
+        update as you mute and solo, so it always states what it would capture —
+        "3 of 4 tracks". Mute everything and it disables rather than writing silence.
+      </p>
+      <p class="only-cli">
+        The command line has no mutes to read, so use <code>--tones-only</code> to drop
+        the residual, or <code>-f wav-mix</code> for a single summed file.
+      </p>
+
+      <h3>Things worth knowing</h3>
+      <ul>
+        <li>Bulk WAV exports are <strong>24-bit</strong>. The reconstruction is exact in 32-bit float; 24-bit rounds each sample by an inaudible amount. Export a track on its own for bit-identical float.</li>
+        <li>The residual has no pitch, so it is <strong>never</strong> exported as MIDI. Nothing is wrong if you get 39 MIDI files where there were 40 WAVs.</li>
+        <li>Every archive contains a <strong>MANIFEST.txt</strong> saying what is inside, what was left out and why, and whether the parts add back up.</li>
+        <li>MIDI pitch bend is set to &plusmn;48 semitones. If your instrument ignores that, wide glides play flattened.</li>
+        <li>A ten-minute analysis is around <strong>3.2 GB</strong> of WAV. The app tells you the size on the button before you commit.</li>
+      </ul>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="cli" style="--accent: var(--s2)">
+      <h2>The command line in full</h2>
+      <p class="lede">
+        Four subcommands. <code>one</code> and <code>many</code> take the same options;
+        <code>many</code> adds two of its own.
+      </p>
+
+      <h3>Build a command</h3>
+      <div class="card">
+        <div class="builder">
+          <div class="field">
+            <label for="b-cmd">Subcommand</label>
+            <select id="b-cmd">
+              <option value="one">one — a single file</option>
+              <option value="many">many — a directory</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="b-in">Input</label>
+            <input type="text" id="b-in" value="take.wav">
+          </div>
+          <div class="field">
+            <label for="b-out">Output folder <span style="text-transform:none">(optional)</span></label>
+            <input type="text" id="b-out" placeholder="beside the input">
+          </div>
+          <div class="field">
+            <span class="flabel">Formats</span>
+            <div class="fmtgrid">
+              <label><input type="checkbox" class="fmt" value="wav" checked> wav</label>
+              <label><input type="checkbox" class="fmt" value="wav-tones"> wav-tones</label>
+              <label><input type="checkbox" class="fmt" value="wav-mix"> wav-mix</label>
+              <label><input type="checkbox" class="fmt" value="mid"> mid</label>
+              <label><input type="checkbox" class="fmt" value="mid-single"> mid-single</label>
+            </div>
+          </div>
+          <div class="field">
+            <label for="b-depth">Passes</label>
+            <input type="number" id="b-depth" min="1" max="8" value="1">
+          </div>
+          <div class="field">
+            <label for="b-strip">Strip first</label>
+            <input type="number" id="b-strip" min="0" max="6" value="0">
+          </div>
+          <div class="field">
+            <label for="b-preset">Preset</label>
+            <select id="b-preset">
+              <option value="">— none —</option>
+              <option>Sharp attacks</option>
+              <option>Sustained and tonal</option>
+              <option>Bells and struck metal</option>
+              <option>Voice and glides</option>
+              <option>Dig deep</option>
+              <option>Just the notes</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="b-jobs">Files at once</label>
+            <input type="number" id="b-jobs" min="1" max="16" value="1">
+          </div>
+          <div class="field">
+            <span class="flabel">Also</span>
+            <div class="checks">
+              <label><input type="checkbox" id="b-rec"> descend into subfolders</label>
+              <label><input type="checkbox" id="b-tones"> leave out the residual</label>
+              <label><input type="checkbox" id="b-dry"> dry run, write nothing</label>
+              <label><input type="checkbox" id="b-json"> JSON output</label>
+            </div>
+          </div>
+        </div>
+        <div class="cmd">
+          <pre id="built"></pre>
+          <button class="copy" data-copy="#built">Copy</button>
+        </div>
+        <p id="built-note" style="font-size:13.5px;color:var(--ink-soft);margin:0"></p>
+      </div>
+
+      <h3>Every option</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Option</th><th>Does</th></tr></thead>
+          <tbody>
+            <tr><td><code>-o, --output DIR</code></td><td>Where to write. Defaults to beside the input; for <code>many</code>, a <code>decomposed/</code> folder inside it.</td></tr>
+            <tr><td><code>-f, --format FMT</code></td><td>Repeatable. <code>wav</code>, <code>wav-tones</code>, <code>wav-mix</code>, <code>mid</code>, <code>mid-single</code>. Default <code>wav</code>.</td></tr>
+            <tr><td><code>--depth N</code></td><td>Analysis passes, 1&ndash;8.</td></tr>
+            <tr><td><code>--strip N</code></td><td>Passes to run and discard first, 0&ndash;6.</td></tr>
+            <tr><td><code>--preset NAME</code></td><td>Start from a saved preset. Explicit flags still win over it.</td></tr>
+            <tr><td><code>-s, --set KEY=VALUE</code></td><td>Repeatable. Any setting from <code>settings</code>. Out-of-range values are clamped with a warning.</td></tr>
+            <tr><td><code>--tones-only</code></td><td>Leave the residual out of the export.</td></tr>
+            <tr><td><code>-n, --dry-run</code></td><td>Say what would happen. Writes nothing.</td></tr>
+            <tr><td><code>-q, --quiet</code></td><td>Errors only.</td></tr>
+            <tr><td><code>--json</code></td><td>Machine-readable output and nothing else, so it pipes into <code>jq</code>.</td></tr>
+            <tr><td><code>-r, --recursive</code></td><td><code>many</code> only. Descend into subfolders, mirroring the tree on the way out.</td></tr>
+            <tr><td><code>-j, --jobs N</code></td><td><code>many</code> only. Files at once. Each worker holds a whole analysis in memory.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Exit codes</h3>
+      <p>
+        Distinguished so a shell loop can react. "Nothing worked" and "most of it worked"
+        call for different responses.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Code</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr><td class="num">0</td><td>Everything succeeded.</td></tr>
+            <tr><td class="num">1</td><td>Every file failed.</td></tr>
+            <tr><td class="num">2</td><td>Some succeeded, some failed. Batch only.</td></tr>
+            <tr><td class="num">3</td><td>Bad usage — nothing was attempted.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cmd"><pre><span class="prompt">$ </span>fourier-partial many ./field <span class="flag">-o</span> ./out <span class="flag">-q</span>
+<span class="prompt">$ </span><span class="cmt">case $? in
+    0) echo "all good" ;;
+    2) echo "some failed — check stderr" ;;
+    *) echo "run failed" ;;
+  esac</span></pre></div>
+
+      <h3>Batch behaviour</h3>
+      <ul>
+        <li><strong>One bad file does not stop the rest.</strong> It is reported and the run continues.</li>
+        <li><strong>The input tree is mirrored</strong> with <code>-r</code>, so <code>a/kick.wav</code> and <code>b/kick.wav</code> cannot collide.</li>
+        <li><strong>Non-audio is skipped</strong> by extension before anything tries to decode it.</li>
+        <li><strong>Files are processed in sorted order</strong>, so two runs produce logs you can diff.</li>
+      </ul>
+    </section>
+
+    <!-- ================================================================= -->
+    <section id="trouble" style="--accent: var(--danger)">
+      <h2>When something looks wrong</h2>
+      <p class="lede">Most of these are the program behaving correctly in a way that is easy to misread.</p>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>What you see</th><th>What is happening</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Hundreds of meaningless tracks</strong></td>
+              <td>Noise is being tracked as tones. Raise <strong>Shortest tone kept</strong>, or raise <strong>Quiet-track cull</strong>. The "Just the notes" preset does both.</td>
+            </tr>
+            <tr>
+              <td><strong>Only two or three tracks</strong></td>
+              <td>The threshold is culling real material. Lower <strong>Quiet-tone threshold</strong>, or try "Dig deep". If the material is quiet <em>underneath</em> something loud, raise <strong>Passes</strong> instead — that is a masking problem, not a threshold one.</td>
+            </tr>
+            <tr>
+              <td><strong>Almost everything is in the residual</strong></td>
+              <td>Usually correct. Percussive and noisy material genuinely has no pitch to find. Try a smaller <strong>Window size</strong> if the sound is rhythmic.</td>
+            </tr>
+            <tr>
+              <td><strong>A vibrato note shattered into fragments</strong></td>
+              <td>The pitch moved further between looks than allowed. Raise <strong>Allowed pitch drift</strong>, or use the "Voice and glides" preset.</td>
+            </tr>
+            <tr>
+              <td><strong>A bell became one track, not many</strong></td>
+              <td>Its partials were gathered into one "note". Lower <strong>Harmonic tolerance</strong>, or use "Bells and struck metal".</td>
+            </tr>
+            <tr>
+              <td><strong>MIDI has fewer files than WAV</strong></td>
+              <td>Correct. The residual has no pitch and is never written as MIDI.</td>
+            </tr>
+            <tr>
+              <td><strong>The exported tracks do not add back up</strong></td>
+              <td>You used <strong>tones only</strong> (the residual is missing) or <strong>strip</strong> (layers were discarded). Both are documented in the archive's MANIFEST.txt.</td>
+            </tr>
+            <tr>
+              <td><strong>Analysis is extremely slow</strong></td>
+              <td>Check <strong>Passes</strong> — it multiplies the whole analysis. Then <strong>Step between windows</strong>, which is the main cost dial.</td>
+            </tr>
+            <tr>
+              <td><strong>The app opens an old-looking page</strong></td>
+              <td>A stale browser tab. Reload it. If a copy is already running, a second launch may bind a different port.</td>
+            </tr>
+            <tr>
+              <td><strong>"Unsupported audio format"</strong></td>
+              <td>The file's actual bytes are checked, not its extension. A renamed or truncated file is rejected here.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <span class="tag">A settings recipe that usually works</span>
+        <p>
+          Start with the preset closest to your material. Change <strong>one</strong>
+          setting, re-analyse, and listen to the residual. If what you want is in the
+          residual, the analysis is missing it; if what you want is spread over forty
+          junk rows, cull harder. Only reach for <strong>Passes</strong> once you are
+          sure the material you want is being masked rather than filtered.
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    fourier_partial — runs entirely on your own machine; nothing is uploaded.
+    The design document is at <code>docs/TDD_fourier_partial.html</code>, and
+    <code>docs/every_sound_is_a_chord.html</code> explains the underlying idea with
+    sound examples.
+  </footer>
+</div>
+
+<script>
+'use strict';
+
+/* ---------------------------------------------------------------------------
+   Settings data, copied from the program's own schema so the manual and the
+   panel describe the same thing.
+   --------------------------------------------------------------------------- */
+const GROUPS = [
+  { label: "How closely it listens", settings: [
+    { name:"window_size", label:"Window size", min:512, max:16384, step:1, def:4096, adv:false,
+      help:"How much audio it looks at in one go. This is not a quality dial — it picks a side. Bigger separates closer pitches and smears attacks; smaller sharpens attacks and blurs pitch.",
+      higher:"separates closer pitches, smears attacks", lower:"sharper attacks, coarser pitch" },
+    { name:"peak_threshold_db", label:"Quiet-tone threshold", min:-90, max:-20, step:1, def:-60, adv:false,
+      help:"How far below the loudest tone in each moment something can be and still count. The most direct ‘more tracks / fewer tracks’ control.",
+      higher:"fewer, cleaner tones", lower:"finds quiet detail, and more junk" },
+    { name:"hop_size", label:"Step between windows", min:64, max:4096, step:1, def:512, adv:true,
+      help:"How far it moves between looks. Smaller means smoother trajectories and proportionally more work; it is the main cost dial.",
+      higher:"faster analysis, coarser timing", lower:"smoother tracking, slower" },
+    { name:"zero_pad_factor", label:"Spectrum interpolation", min:1, max:8, step:1, def:4, adv:true,
+      help:"Adds no real detail, but samples the spectrum more finely so pitch estimates land closer to the truth. Costs memory.",
+      higher:"slightly more accurate pitch, more memory", lower:"cheaper" },
+    { name:"max_peaks_per_frame", label:"Tones per moment", min:10, max:400, step:10, def:120, adv:true,
+      help:"A ceiling on how many tones it will consider at any instant.",
+      higher:"handles dense, crowded material", lower:"bounds the worst case" },
+  ]},
+  { label: "What counts as one tone", settings: [
+    { name:"max_freq_drift_cents", label:"Allowed pitch drift", min:10, max:300, step:5, def:60, adv:false,
+      help:"How far a tone may move between moments and still be considered the same tone. In cents — 100 is a semitone.",
+      higher:"follows wide vibrato and glides", lower:"stops tracks jumping between pitches" },
+    { name:"min_partial_duration_ms", label:"Shortest tone kept", min:10, max:500, step:10, def:50, adv:false,
+      help:"Anything briefer than this is treated as noise and folded into the leftover track. The main defence against hiss arriving as notes.",
+      higher:"rejects noise-as-tone", lower:"keeps short blips and clicks" },
+    { name:"max_gap_frames", label:"Tolerated silences", min:0, max:10, step:1, def:3, adv:true,
+      help:"How long a tone may be masked by something louder and still resume as the same track rather than starting a new one.",
+      higher:"survives heavy masking", lower:"strict, unforgiving tracking" },
+  ]},
+  { label: "How tones become notes", settings: [
+    { name:"harmonic_tolerance_cents", label:"Harmonic tolerance", min:5, max:200, step:5, def:50, adv:false,
+      help:"How far from an exact multiple a tone can sit and still be counted as part of the same note. Piano strings and struck metal are genuinely stretched, so strictness loses real harmonics.",
+      higher:"groups stretched harmonics (piano, bells)", lower:"stricter, more separate tracks" },
+    { name:"min_track_energy_share", label:"Quiet-track cull", min:0, max:0.2, step:0.001, def:0.005, adv:false,
+      help:"A track must carry at least this share of the loudest track's energy to get a row. Set it to zero to see absolutely everything found — illuminating, and unwieldy.",
+      higher:"fewer, more significant tracks", lower:"shows everything, including junk" },
+    { name:"min_temporal_overlap", label:"Simultaneity required", min:0, max:0.9, step:0.05, def:0.25, adv:true,
+      help:"How much two tones must overlap in time to belong to the same note. Low values start merging separate occurrences of the same pitch.",
+      higher:"splits notes whose harmonics die early", lower:"merges repeats of the same pitch" },
+    { name:"max_tracks", label:"Most tracks shown", min:1, max:300, step:1, def:200, adv:false,
+      help:"A ceiling on rows. Anything beyond it is folded into the leftover track — still audible and exportable, just not on its own row.",
+      higher:"more detail, heavier interface", lower:"only the most prominent notes" },
+  ]},
+  { label: "How many times it looks", settings: [
+    { name:"recursion_depth", label:"Passes", min:1, max:8, step:1, def:1, adv:false,
+      help:"How many times to analyse, each pass working on what the last one could not explain. Every pass costs a full analysis, so 4 takes about four times as long. The tracks still sum to your original exactly, however deep you go.",
+      higher:"digs out quiet detail under loud material", lower:"one ordinary analysis, fastest" },
+    { name:"residual_skip", label:"Layers to strip first", min:0, max:6, step:1, def:0, adv:true,
+      help:"Run this many passes and throw their tracks away, keeping only what they could not explain, then start. This is the ‘what is underneath?’ control. Note that the stripped layers are gone, so what you get back sums to what was left rather than to the file you opened.",
+      higher:"strips more of the obvious material away", lower:"keeps everything from the first pass" },
+  ]},
+];
+
+/* --- Settings reference, with a filter ----------------------------------- */
+function buildSettings() {
+  const host = document.getElementById('settings-list');
+  const frag = document.createDocumentFragment();
+
+  for (const group of GROUPS) {
+    const head = document.createElement('p');
+    head.className = 'grouphead';
+    head.textContent = group.label;
+    frag.appendChild(head);
+
+    for (const s of group.settings) {
+      const el = document.createElement('div');
+      el.className = 'setting';
+      // Everything the filter should match, gathered once rather than read
+      // out of the DOM on every keystroke.
+      el.dataset.hay = [s.name, s.label, s.help, s.higher, s.lower, group.label]
+        .join(' ').toLowerCase();
+      el.dataset.group = group.label;
+
+      const top = document.createElement('div');
+      top.className = 'top';
+      const left = document.createElement('div');
+      const nm = document.createElement('span');
+      nm.className = 'nm'; nm.textContent = s.name;
+      const hu = document.createElement('span');
+      hu.className = 'hu'; hu.textContent = ' ' + s.label;
+      left.append(nm, hu);
+      if (s.adv) {
+        const b = document.createElement('span');
+        b.className = 'badge'; b.textContent = 'advanced';
+        left.append(' ', b);
+      }
+      const rng = document.createElement('span');
+      rng.className = 'rng';
+      rng.textContent = `${s.min} … ${s.max} · default ${s.def}`;
+      top.append(left, rng);
+
+      const p = document.createElement('p');
+      p.textContent = s.help;
+
+      const arrows = document.createElement('div');
+      arrows.className = 'arrows';
+      const up = document.createElement('span'); up.textContent = `↑ ${s.higher}`;
+      const dn = document.createElement('span'); dn.textContent = `↓ ${s.lower}`;
+      arrows.append(up, dn);
+
+      el.append(top, p, arrows);
+      frag.appendChild(el);
+    }
+  }
+  host.appendChild(frag);
+
+  const search = document.getElementById('setting-search');
+  const count = document.getElementById('setting-count');
+  const items = [...host.querySelectorAll('.setting')];
+  const heads = [...host.querySelectorAll('.grouphead')];
+
+  function apply() {
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    for (const el of items) {
+      const hit = !q || el.dataset.hay.includes(q);
+      el.classList.toggle('hidden', !hit);
+      if (hit) shown++;
+    }
+    // A group heading with nothing under it is noise, so hide it too.
+    for (const head of heads) {
+      const any = items.some(
+        (el) => el.dataset.group === head.textContent && !el.classList.contains('hidden')
+      );
+      head.style.display = any ? '' : 'none';
+    }
+    count.textContent = q ? `${shown} of ${items.length}` : `${items.length} settings`;
+  }
+  search.addEventListener('input', apply);
+  apply();
+}
+
+/* --- Depth visualiser ----------------------------------------------------
+   Illustrative, not a simulation: each pass is drawn as explaining a share of
+   whatever is left. The shares are made up; the STRUCTURE is exact — which
+   passes are kept, which are discarded, and what the remainder sums to. That
+   structure is the thing people get wrong, so it is what the diagram encodes.
+   ------------------------------------------------------------------------- */
+function depthView() {
+  const stripInput = document.getElementById('d-strip');
+  const depthInput = document.getElementById('d-depth');
+  const view = document.getElementById('pass-view');
+  const verdict = document.getElementById('pass-verdict');
+
+  function draw() {
+    const strip = Math.max(0, Math.min(4, Number(stripInput.value) || 0));
+    const depth = Math.max(1, Math.min(5, Number(depthInput.value) || 1));
+    const total = strip + depth;
+
+    view.textContent = '';
+    let remaining = 100;
+
+    for (let i = 0; i < total; i++) {
+      const level = i + 1;
+      const skipped = i < strip;
+      // Each pass explains less than the last; the first takes the bulk.
+      const explained = Math.max(2, Math.round(remaining * (i === 0 ? 0.72 : 0.34)));
+      const after = Math.max(0, remaining - explained);
+
+      const row = document.createElement('div');
+      row.className = 'pass';
+
+      const label = document.createElement('span');
+      label.className = 'plabel';
+      label.textContent = `Pass ${level}`;
+
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.setAttribute('role', 'img');
+      bar.setAttribute(
+        'aria-label',
+        `Pass ${level} explains ${explained}% and is ${skipped ? 'discarded' : 'kept'}; ` +
+        `${after}% remains`
+      );
+      const found = document.createElement('i');
+      found.className = skipped ? 'dropped' : 'kept';
+      found.style.width = explained + '%';
+      const left = document.createElement('i');
+      left.className = 'left';
+      left.style.width = after + '%';
+      bar.append(found, left);
+
+      const note = document.createElement('span');
+      note.className = 'pnote';
+      note.textContent = skipped ? 'thrown away' : 'kept';
+
+      row.append(label, bar, note);
+      view.appendChild(row);
+      remaining = after;
+    }
+
+    // The final residual is always kept, whatever happened above it.
+    const row = document.createElement('div');
+    row.className = 'pass';
+    const label = document.createElement('span');
+    label.className = 'plabel';
+    label.textContent = 'Residual';
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    const kept = document.createElement('i');
+    kept.className = 'kept';
+    kept.style.width = Math.max(2, remaining) + '%';
+    bar.appendChild(kept);
+    const note = document.createElement('span');
+    note.className = 'pnote';
+    note.textContent = 'kept';
+    row.append(label, bar, note);
+    view.appendChild(row);
+
+    verdict.className = 'verdict' + (strip > 0 ? ' broken' : '');
+    if (strip === 0) {
+      verdict.innerHTML =
+        '<b>Your tracks add back to your original file.</b>' +
+        `Every pass keeps what it found, so the ${depth} pass${depth === 1 ? '' : 'es'} ` +
+        'plus the residual account for the whole recording — exactly.';
+    } else {
+      verdict.innerHTML =
+        '<b>Your tracks add back to the stripped signal, not your file.</b>' +
+        `The first ${strip} pass${strip === 1 ? ' was' : 'es were'} thrown away, so that ` +
+        'material is gone. This is what “strip” is for — and the export says so in ' +
+        'its MANIFEST.txt rather than pretending otherwise.';
+    }
+  }
+
+  stripInput.addEventListener('input', draw);
+  depthInput.addEventListener('input', draw);
+  draw();
+}
+
+/* --- Command builder ------------------------------------------------------ */
+function builder() {
+  const els = {
+    cmd: document.getElementById('b-cmd'),
+    input: document.getElementById('b-in'),
+    out: document.getElementById('b-out'),
+    depth: document.getElementById('b-depth'),
+    strip: document.getElementById('b-strip'),
+    preset: document.getElementById('b-preset'),
+    jobs: document.getElementById('b-jobs'),
+    rec: document.getElementById('b-rec'),
+    tones: document.getElementById('b-tones'),
+    dry: document.getElementById('b-dry'),
+    json: document.getElementById('b-json'),
+  };
+  const out = document.getElementById('built');
+  const note = document.getElementById('built-note');
+  const formats = [...document.querySelectorAll('.fmt')];
+
+  /** Quote only when the shell would otherwise mangle it. */
+  const q = (s) => (/[^\w./@%+:=-]/.test(s) ? `'${s.replace(/'/g, `'\\''`)}'` : s);
+
+  function build() {
+    const many = els.cmd.value === 'many';
+    // The two batch-only fields are meaningless for a single file, so they
+    // disable rather than silently producing a command that would be refused.
+    for (const el of [els.rec, els.jobs]) {
+      el.disabled = !many;
+      el.closest('label, .field').style.opacity = many ? '1' : '0.45';
+    }
+
+    const parts = ['fourier-partial', els.cmd.value, q(els.input.value || (many ? './audio' : 'take.wav'))];
+    if (els.out.value.trim()) parts.push('-o', q(els.out.value.trim()));
+
+    const picked = formats.filter((f) => f.checked).map((f) => f.value);
+    if (picked.length === 0) {
+      // Nothing ticked would still export wav, which would be a lie on screen.
+      parts.push('-f', 'wav');
+    } else if (!(picked.length === 1 && picked[0] === 'wav')) {
+      for (const f of picked) parts.push('-f', f);
+    }
+
+    const depth = Number(els.depth.value) || 1;
+    const strip = Number(els.strip.value) || 0;
+    if (depth > 1) parts.push('--depth', String(depth));
+    if (strip > 0) parts.push('--strip', String(strip));
+    if (els.preset.value) parts.push('--preset', q(els.preset.value));
+    if (els.tones.checked) parts.push('--tones-only');
+    if (many && els.rec.checked) parts.push('-r');
+    if (many && Number(els.jobs.value) > 1) parts.push('-j', String(Number(els.jobs.value)));
+    if (els.dry.checked) parts.push('-n');
+    if (els.json.checked) parts.push('--json');
+
+    out.textContent = '$ ' + parts.join(' ');
+
+    const notes = [];
+    if (strip > 0) notes.push('Stripping discards layers, so the export will not reconstruct the input.');
+    if (depth + strip > 1) notes.push(`About ${depth + strip}× the usual analysis time.`);
+    if (many && Number(els.jobs.value) > 1) notes.push('Each parallel worker holds a whole analysis in memory.');
+    if (picked.includes('wav-tones')) notes.push('“wav-tones” omits the residual, so it will not reconstruct either.');
+    note.textContent = notes.join(' ');
+  }
+
+  for (const el of [...Object.values(els), ...formats]) {
+    el.addEventListener('input', build);
+    el.addEventListener('change', build);
+  }
+  build();
+}
+
+/* --- Copy buttons --------------------------------------------------------- */
+document.addEventListener('click', async (event) => {
+  const trigger = event.target.closest('.copy');
+  if (!trigger) return;
+  const source = trigger.dataset.copy
+    ? document.querySelector(trigger.dataset.copy)
+    : trigger.parentElement.querySelector('pre');
+  if (!source) return;
+  // Strip the prompt so the pasted line runs as typed.
+  const text = source.textContent.replace(/^\$ /gm, '');
+  try {
+    await navigator.clipboard.writeText(text);
+    const was = trigger.textContent;
+    trigger.textContent = 'Copied';
+    setTimeout(() => { trigger.textContent = was; }, 1200);
+  } catch {
+    // Clipboard access can be refused; selecting the text is the fallback that
+    // always works and needs no permission.
+    const range = document.createRange();
+    range.selectNodeContents(source);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+});
+
+/* Give every command block a copy button, rather than writing one per block. */
+function copyButtons() {
+  for (const block of document.querySelectorAll('.cmd')) {
+    if (block.querySelector('.copy')) continue;
+    const button = document.createElement('button');
+    button.className = 'copy';
+    button.type = 'button';
+    button.textContent = 'Copy';
+    block.appendChild(button);
+  }
+}
+
+/* --- App / command-line mode --------------------------------------------- */
+function modes() {
+  const buttons = {
+    app: document.getElementById('mode-app'),
+    cli: document.getElementById('mode-cli'),
+    both: document.getElementById('mode-both'),
+  };
+  function set(mode) {
+    document.body.dataset.mode = mode;
+    for (const [key, button] of Object.entries(buttons)) {
+      button.setAttribute('aria-pressed', String(key === mode));
+    }
+    try { localStorage.setItem('fp-manual-mode', mode); } catch { /* private mode */ }
+  }
+  for (const [key, button] of Object.entries(buttons)) {
+    button.addEventListener('click', () => set(key));
+  }
+  let saved = 'app';
+  try { saved = localStorage.getItem('fp-manual-mode') || 'app'; } catch { /* ignore */ }
+  set(buttons[saved] ? saved : 'app');
+}
+
+/* --- Theme ---------------------------------------------------------------- */
+function theme() {
+  const button = document.getElementById('theme');
+  // window.matchMedia, not a bare global, and optional: if the environment
+  // has no media-query support the toggle still works, it just cannot read
+  // the OS preference to label itself.
+  const media = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : { matches: false, addEventListener() {} };
+  function label() {
+    const explicit = document.documentElement.dataset.theme;
+    const dark = explicit ? explicit === 'dark' : media.matches;
+    button.textContent = dark ? 'Light' : 'Dark';
+  }
+  button.addEventListener('click', () => {
+    const explicit = document.documentElement.dataset.theme;
+    const dark = explicit ? explicit === 'dark' : media.matches;
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('fp-manual-theme', dark ? 'light' : 'dark'); } catch { /* ignore */ }
+    label();
+  });
+  try {
+    const saved = localStorage.getItem('fp-manual-theme');
+    if (saved) document.documentElement.dataset.theme = saved;
+  } catch { /* ignore */ }
+  media.addEventListener('change', label);
+  label();
+}
+
+/* --- Start everything -----------------------------------------------------
+   Each piece runs on its own. A page like this is a stack of independent
+   enhancements, and at top level an uncaught error in one aborts every
+   statement after it -- which is how a failing theme toggle silently took the
+   whole table of contents with it the first time this was run. Isolating them
+   costs nothing and means the worst case is one dead control rather than a
+   dead page.
+   ------------------------------------------------------------------------- */
+function safely(label, fn) {
+  try {
+    fn();
+  } catch (err) {
+    console.error(`manual: ${label} failed`, err);
+  }
+}
+
+/* --- Contents, built from the sections themselves ------------------------- */
+function contents() {
+  const list = document.getElementById('toc-list');
+  const sections = [...document.querySelectorAll('main section')];
+  const links = new Map();
+
+  sections.forEach((section, index) => {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = '#' + section.id;
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = String(index + 1);
+    const t = document.createElement('span');
+    t.textContent = section.querySelector('h2').textContent;
+    link.append(n, t);
+    item.appendChild(link);
+    list.appendChild(item);
+    links.set(section.id, link);
+  });
+
+  // Highlight whichever section is nearest the top of the viewport. Driven by
+  // an observer rather than a scroll handler so it costs nothing while idle.
+  // Scroll-spy is a nicety; the links work without it. Skipped rather than
+  // thrown where IntersectionObserver is unavailable.
+  if (typeof IntersectionObserver !== 'function') return;
+
+  const seen = new Map();
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) seen.set(entry.target.id, entry);
+      let best = null;
+      for (const entry of seen.values()) {
+        if (!entry.isIntersecting) continue;
+        if (!best || entry.boundingClientRect.top < best.boundingClientRect.top) best = entry;
+      }
+      if (!best) return;
+      for (const link of links.values()) link.classList.remove('is-current');
+      links.get(best.target.id)?.classList.add('is-current');
+    },
+    { rootMargin: '-10% 0px -70% 0px', threshold: [0, 0.1] }
+  );
+  for (const section of sections) observer.observe(section);
+}
+
+for (const [label, fn] of [
+  ['settings reference', buildSettings],
+  ['copy buttons', copyButtons],
+  ['depth view', depthView],
+  ['command builder', builder],
+  ['mode switch', modes],
+  ['theme', theme],
+  ['contents', contents],
+]) {
+  safely(label, fn);
+}
+</script>
